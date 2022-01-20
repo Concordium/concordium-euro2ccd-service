@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use clap::AppSettings;
-use serde_json::json;
-use structopt::StructOpt;
-use std::path::PathBuf;
 use fraction::Fraction;
+use serde_json::json;
+use std::path::PathBuf;
+use structopt::StructOpt;
 
 use concordium_rust_sdk::{
     constants::DEFAULT_NETWORK_ID,
@@ -28,28 +28,28 @@ struct App {
         use_delimiter = true,
         env = "EURO2CCD_SERVICE_NODES"
     )]
-    endpoint: endpoints::Endpoint,
+    endpoint:        endpoints::Endpoint,
     #[structopt(
         long = "rpc-token",
         help = "GRPC interface access token for accessing all the nodes.",
         default_value = "rpcadmin",
         env = "EURO2CCD_SERVICE_RPC_TOKEN"
     )]
-    token: String,
-    #[structopt(long = "key", help = "Path to update keys to use.", env="EURO2CCD_SERVICE_KEYS")]
-    governance_keys:     Vec<PathBuf>,
+    token:           String,
+    #[structopt(long = "key", help = "Path to update keys to use.", env = "EURO2CCD_SERVICE_KEYS")]
+    governance_keys: Vec<PathBuf>,
     #[structopt(
         long = "log-level",
         default_value = "off",
         help = "Maximum log level.",
         env = "EURO2CCD_SERVICE_LOG_LEVEL"
     )]
-    log_level: log::LevelFilter,
+    log_level:       log::LevelFilter,
 }
 
 /**
-* Get the new MicroCCD/Euro exchange rate
-*/
+ * Get the new MicroCCD/Euro exchange rate
+ */
 async fn pull_exchange_rate(client: reqwest::Client) -> Result<ExchangeRate> {
     let params = json!({"ccy1": "EUR", "ccy2": "ADA"});
     let req = client.post("https://api-pub.bitfinex.com/v2/calc/fx").json(&params);
@@ -58,15 +58,18 @@ async fn pull_exchange_rate(client: reqwest::Client) -> Result<ExchangeRate> {
     let frac = Fraction::from(resp[0]);
     let numerator = match frac.numer() {
         Some(e) => Ok(e),
-        None => Err(anyhow!("unable to get numerator"))
+        None => Err(anyhow!("unable to get numerator")),
     }?;
     let denominator = match frac.denom() {
         Some(e) => Ok(e),
-        None => Err(anyhow!("unable to get denominator"))
+        None => Err(anyhow!("unable to get denominator")),
     }?;
 
     // We multiply with 1/1000000 MicroCCD/CCD
-    Ok(ExchangeRate { numerator: *numerator, denominator: *denominator * 1000000 })
+    Ok(ExchangeRate {
+        numerator:   *numerator,
+        denominator: *denominator * 1000000,
+    })
 }
 
 async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSummary> {
@@ -84,7 +87,10 @@ async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSu
     Ok(summary)
 }
 
-async fn get_signer(keys: Vec<PathBuf>, summary: &BlockSummary) -> Result<Vec<(UpdateKeysIndex, KeyPair)>> {
+async fn get_signer(
+    keys: Vec<PathBuf>,
+    summary: &BlockSummary,
+) -> Result<Vec<(UpdateKeysIndex, KeyPair)>> {
     let kps: Vec<KeyPair> = keys
         .iter()
         .map(|p| {
@@ -99,11 +105,10 @@ async fn get_signer(keys: Vec<PathBuf>, summary: &BlockSummary) -> Result<Vec<(U
     // find the key indices to sign with
     let mut signer = Vec::new();
     for kp in kps {
-        if let Some(i) = update_keys
-            .iter()
-            .position(|public| public.public == kp.public.into())
-        {
-            let idx = UpdateKeysIndex { index: i as u16 };
+        if let Some(i) = update_keys.iter().position(|public| public.public == kp.public.into()) {
+            let idx = UpdateKeysIndex {
+                index: i as u16,
+            };
             if update_key_indices.authorized_keys.contains(&idx) {
                 signer.push((idx, kp))
             } else {
@@ -122,24 +127,20 @@ async fn get_signer(keys: Vec<PathBuf>, summary: &BlockSummary) -> Result<Vec<(U
     Ok(signer)
 }
 
-async fn send_update(summary: BlockSummary, signer: Vec<(UpdateKeysIndex, KeyPair)>, exchange_rate: ExchangeRate,  mut client: endpoints::Client) -> Result<hashes::TransactionHash> {
-    let seq_number = summary
-        .updates
-        .update_queues
-        .micro_gtu_per_euro
-        .next_sequence_number;
-    let effective_time = TransactionTime::from_seconds(chrono::offset::Utc::now().timestamp() as u64 + 301); // 2.5min effectiveTime.
+async fn send_update(
+    summary: BlockSummary,
+    signer: Vec<(UpdateKeysIndex, KeyPair)>,
+    exchange_rate: ExchangeRate,
+    mut client: endpoints::Client,
+) -> Result<hashes::TransactionHash> {
+    let seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
+    let effective_time =
+        TransactionTime::from_seconds(chrono::offset::Utc::now().timestamp() as u64 + 301); // 2.5min effectiveTime.
     let timeout =
         TransactionTime::from_seconds(chrono::offset::Utc::now().timestamp() as u64 + 300); // 5min expiry.
     let payload = UpdatePayload::MicroGTUPerEuro(exchange_rate);
-    let block_item: BlockItem<Payload> = update::update(
-        signer.as_slice(),
-        seq_number,
-        effective_time,
-        timeout,
-        payload,
-    )
-        .into();
+    let block_item: BlockItem<Payload> =
+        update::update(signer.as_slice(), seq_number, effective_time, timeout, payload).into();
 
     let response = client
         .send_transaction(DEFAULT_NETWORK_ID, &block_item)
@@ -149,7 +150,10 @@ async fn send_update(summary: BlockSummary, signer: Vec<(UpdateKeysIndex, KeyPai
     Ok(block_item.hash())
 }
 
-async fn check_update_status(submission_id: hashes::TransactionHash, mut client: endpoints::Client) -> Result<()> {
+async fn check_update_status(
+    submission_id: hashes::TransactionHash,
+    mut client: endpoints::Client,
+) -> Result<()> {
     // wait until it's finalized.
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
     loop {
@@ -160,7 +164,7 @@ async fn check_update_status(submission_id: hashes::TransactionHash, mut client:
             .context("Could not query submission status.")?
         {
             TransactionStatus::Finalized(blocks) => {
-                 log::info!(
+                log::info!(
                     "Submission is finalized in blocks {:?}",
                     blocks.keys().collect::<Vec<_>>()
                 );
@@ -172,9 +176,7 @@ async fn check_update_status(submission_id: hashes::TransactionHash, mut client:
                     blocks.keys().collect::<Vec<_>>()
                 );
             }
-            TransactionStatus::Received => {
-                log::debug!("Submission is received.")
-            }
+            TransactionStatus::Received => log::debug!("Submission is received."),
         }
     }
     Ok(())
