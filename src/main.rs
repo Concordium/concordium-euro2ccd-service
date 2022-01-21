@@ -61,6 +61,8 @@ struct App {
         env = "EURO2CCD_SERVICE_LOG_LEVEL"
     )]
     log_level:       log::LevelFilter,
+    #[structopt(long = "max-change", help = "percentage max change allowed when updating exchange rate.", env = "EURO2CCD_SERVICE_MAX_CHANGE")]
+    max_change: f64,
 }
 
 fn convert_fraction_to_exchange_rate(frac: Fraction) -> Result<ExchangeRate> {
@@ -121,6 +123,15 @@ async fn pull_exchange_rate(client: reqwest::Client) -> Result<ExchangeRate> {
     let micro_per_ccd = Fraction::new(1u64, 1000000u64);
     let micro_ccd_rate = ccd_rate * micro_per_ccd;
     convert_fraction_to_exchange_rate(micro_ccd_rate)
+}
+
+fn ensure_exchange_rate_within_bounds(current_exchange_rate: ExchangeRate, new_exchange_rate: ExchangeRate, max_change: f64) -> bool {
+    let current = Fraction::new(current_exchange_rate.numerator, current_exchange_rate.denominator);
+    let new = Fraction::new(new_exchange_rate.numerator, new_exchange_rate.denominator);
+    let max_increase = current *  Fraction::from(1f64 + max_change);
+    let max_decrease = current *  Fraction::from(1f64 - max_change);
+    log::debug!("Allowed update range is {}-{}.", max_decrease, max_increase);
+    new > max_decrease && new < max_increase
 }
 
 async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSummary> {
@@ -282,8 +293,11 @@ async fn main() -> Result<()> {
     log_builder.init();
 
     // Setup (Relaxed error handling)
+    let max_change = app.max_change;
+
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
+    let mut prev_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
     log::info!("Loaded initial block summary");
     let signer = get_signer(app.governance_keys, &summary).await?;
     log::info!("keys loaded");
@@ -307,6 +321,11 @@ async fn main() -> Result<()> {
         };
         log::info!("New exchange rate polled: {:#?}", rate);
 
+        if !ensure_exchange_rate_within_bounds(prev_rate, rate, max_change) {
+            log::warn!("New exchange rate outside of bounds: {:#?}", rate);
+            continue
+        }
+
         let (submission_id, new_seq_number) =
             send_update(seq_number, &signer, rate, node_client.clone()).await;
         // new_seq_number should be the sequence number, which was used to send the
@@ -314,7 +333,7 @@ async fn main() -> Result<()> {
         seq_number = UpdateSequenceNumber {
             number: new_seq_number.number + 1,
         };
-
+        prev_rate = rate;
         log::info!("sent update with submission id: {:#?}", submission_id);
 
         match tokio::time::timeout(
