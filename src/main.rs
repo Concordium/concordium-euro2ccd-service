@@ -1,14 +1,9 @@
 mod exchanges;
 mod helpers;
+mod secretsmanager;
 
 use anyhow::{anyhow, Context, Result};
 use clap::AppSettings;
-use exchanges::{pull_exchange_rate, Exchange};
-use fraction::Fraction;
-use helpers::convert_fraction_to_exchange_rate;
-use std::path::PathBuf;
-use structopt::StructOpt;
-
 use concordium_rust_sdk::{
     constants::DEFAULT_NETWORK_ID,
     endpoints,
@@ -23,6 +18,12 @@ use crypto_common::{
     base16_encode_string,
     types::{KeyPair, TransactionTime},
 };
+use exchanges::{pull_exchange_rate, Exchange};
+use fraction::Fraction;
+use helpers::convert_fraction_to_exchange_rate;
+use secretsmanager::{get_governance_from_aws, get_governance_from_file};
+use std::path::PathBuf;
+use structopt::{clap::ArgGroup, StructOpt};
 
 const MAX_TIME_CHECK_SUBMISSION: u64 = 60; // seconds
 const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 3; // seconds
@@ -31,6 +32,7 @@ const UPDATE_EXPIRY_OFFSET: u64 = 300; // seconds
 const UPDATE_EFFECTIVE_TIME_OFFSET: u64 = 301; // seconds
 
 #[derive(StructOpt)]
+#[structopt(group = ArgGroup::with_name("testing").requires("test").multiple(true))]
 struct App {
     #[structopt(
         long = "node",
@@ -47,8 +49,15 @@ struct App {
         env = "EURO2CCD_SERVICE_RPC_TOKEN"
     )]
     token:           String,
-    #[structopt(long = "key", help = "Path to update keys to use.", env = "EURO2CCD_SERVICE_KEYS")]
-    governance_keys: Vec<PathBuf>,
+    #[structopt(
+        long = "secret-name",
+        help = "Secret name on AWS.",
+        env = "EURO2CCD_SERVICE_SECRET_NAME",
+        default_value = "secret-dummy",
+        required_unless = "test",
+        conflicts_with = "local-keys"
+    )]
+    secret_name:     String,
     #[structopt(
         long = "update-interval",
         help = "How often to perform the update, in minutes.",
@@ -70,12 +79,28 @@ struct App {
     )]
     max_change:      u8,
     #[structopt(
+        long = "test",
+        help = "If set to true, allows using test parameters (FOR TESTING)",
+        env = "EURO2CCD_SERVICE_TEST",
+        group = "testing"
+    )]
+    test:            bool,
+    #[structopt(
         long = "local-exchange",
         help = "If set to true, pulls exchange rate from localhost:8111 (see local_exchange \
-                subproject)",
-        env = "EURO2CCD_SERVICE_LOCAL_EXCHANGE"
+                subproject)  (FOR TESTING)",
+        env = "EURO2CCD_SERVICE_LOCAL_EXCHANGE",
+        group = "testing"
     )]
     local_exchange:  bool,
+    #[structopt(
+        long = "local-keys",
+        help = "If given, the service uses local governance keys instead of pulling them from \
+                aws. (FOR TESTING) ",
+        env = "EURO2CCD_SERVICE_LOCAL_KEYS",
+        group = "testing"
+    )]
+    local_keys:      Option<Vec<PathBuf>>,
 }
 
 fn bound_exchange_rate_change(
@@ -109,7 +134,7 @@ fn bound_exchange_rate_change(
         log::warn!("New exchange rate was outside allowed range, bounding it to {}", bounded);
         return convert_fraction_to_exchange_rate(current - max_change_concrete);
     }
-    return Ok(new_exchange_rate);
+    Ok(new_exchange_rate)
 }
 
 async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSummary> {
@@ -128,17 +153,9 @@ async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSu
 }
 
 async fn get_signer(
-    keys: Vec<PathBuf>,
+    kps: Vec<KeyPair>,
     summary: &BlockSummary,
 ) -> Result<Vec<(UpdateKeysIndex, KeyPair)>> {
-    let kps: Vec<KeyPair> = keys
-        .iter()
-        .map(|p| {
-            serde_json::from_reader(std::fs::File::open(p).context("Could not open file.")?)
-                .context("Could not read keys from file.")
-        })
-        .collect::<anyhow::Result<_>>()?;
-
     let update_keys = &summary.updates.keys.level_2_keys.keys;
     let update_key_indices = &summary.updates.keys.level_2_keys.micro_gtu_per_euro;
 
@@ -266,6 +283,10 @@ async fn main() -> Result<()> {
     // Setup
     // (Stop if error occurs)
 
+    if app.test {
+        log::warn!("Running with test options enabled!");
+    }
+
     let node_client = endpoints::Client::connect(app.endpoint, app.token).await?;
 
     let mut log_builder = env_logger::Builder::from_env("TRANSACTION_LOGGER_LOG");
@@ -274,7 +295,7 @@ async fn main() -> Result<()> {
     log_builder.init();
 
     let max_change = app.max_change;
-    if max_change > 99 || max_change < 1 {
+    if !(1..=99).contains(&max_change) {
         log::error!("Max change outside of allowed range (1-99): {} ", max_change);
         return Err(anyhow!("Error during startup"));
     }
@@ -283,7 +304,13 @@ async fn main() -> Result<()> {
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
     let mut prev_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
     log::info!("Loaded initial block summary, current exchange rate: {:#?}", prev_rate);
-    let signer = get_signer(app.governance_keys, &summary).await?;
+
+    let secret_keys = match app.local_keys {
+        Some(path) => get_governance_from_file(path),
+        None => get_governance_from_aws(&app.secret_name).await,
+    }?;
+
+    let signer = get_signer(secret_keys, &summary).await?;
     log::info!("keys loaded");
 
     let mut interval =

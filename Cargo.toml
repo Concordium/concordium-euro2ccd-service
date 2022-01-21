@@ -20,3 +20,7 @@ fraction = "0.9.0"
 chrono = {version = "0.4", features = ["serde"] }
 
 crypto_common = { version = "0.1.0", path = "./deps/concordium-rust-sdk/concordium-base/rust-src/crypto_common", features = ["encryption"] }
+
+aws-config = "0.5.2"
+aws-sdk-dynamodb = "0.5.2"
+aws-sdk-secretsmanager = "0.5.2"
