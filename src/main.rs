@@ -298,7 +298,7 @@ async fn main() -> Result<()> {
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
     let mut prev_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
-    log::info!("Loaded initial block summary");
+    log::info!("Loaded initial block summary, current exchange rate: {:#?}" , prev_rate);
     let signer = get_signer(app.governance_keys, &summary).await?;
     log::info!("keys loaded");
     let client = reqwest::Client::new();
@@ -334,7 +334,7 @@ async fn main() -> Result<()> {
             number: new_seq_number.number + 1,
         };
         prev_rate = rate;
-        log::info!("sent update with submission id: {:#?}", submission_id);
+        log::info!("sent update with submission id: {}", submission_id);
 
         match tokio::time::timeout(
             tokio::time::Duration::from_secs(MAX_TIME_CHECK_SUBMISSION),
@@ -345,7 +345,7 @@ async fn main() -> Result<()> {
             Ok(_) => (),
             Err(_) => {
                 log::error!(
-                    "Was unable to confirm update with id {:#?} within allocated timeframe",
+                    "Was unable to confirm update with id {} within allocated timeframe",
                     submission_id
                 );
                 continue;
@@ -353,7 +353,7 @@ async fn main() -> Result<()> {
         };
 
         log::info!(
-            "Succesfully updated exchange rate to: {:#?}, with id {:#?}",
+            "Succesfully updated exchange rate to: {:#?}, with id {}",
             rate,
             submission_id
         );
