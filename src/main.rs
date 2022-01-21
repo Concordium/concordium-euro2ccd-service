@@ -12,6 +12,7 @@ use concordium_rust_sdk::{
         hashes,
         transactions::{update, BlockItem, Payload},
         BlockSummary, ExchangeRate, TransactionStatus, UpdateKeysIndex, UpdatePayload,
+        UpdateSequenceNumber,
     },
 };
 use crypto_common::{
@@ -19,12 +20,20 @@ use crypto_common::{
     types::{KeyPair, TransactionTime},
 };
 
+const MAX_TIME_CHECK_SUBMISSION: u64 = 60; // seconds
+const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 3; // seconds
+const RETRY_SUBMISSION_INTERVAL: u64 = 10; // seconds
+const RETRY_BITFINEX_INTERVAL: u64 = 10; // seconds
+const BITFINEX_URL: &str = "https://api-pub.bitfinex.com/v2/calc/fx";
+const UPDATE_EXPIRY_OFFSET: u64 = 300; // seconds
+const UPDATE_EFFECTIVE_TIME_OFFSET: u64 = 301; // seconds
+
 #[derive(StructOpt)]
 struct App {
     #[structopt(
         long = "node",
         help = "GRPC interface of the node(s).",
-        default_value = "http://localhost:10500",
+        default_value = "http://localhost:10000",
         use_delimiter = true,
         env = "EURO2CCD_SERVICE_NODES"
     )]
@@ -39,6 +48,13 @@ struct App {
     #[structopt(long = "key", help = "Path to update keys to use.", env = "EURO2CCD_SERVICE_KEYS")]
     governance_keys: Vec<PathBuf>,
     #[structopt(
+        long = "update-interval",
+        help = "How often to perform the update, in minutes.",
+        env = "EURO2CCD_SERVICE_UPDATE_INTERVAL",
+        default_value = "1"
+    )]
+    update_interval: u64,
+    #[structopt(
         long = "log-level",
         default_value = "off",
         help = "Maximum log level.",
@@ -47,29 +63,64 @@ struct App {
     log_level:       log::LevelFilter,
 }
 
+fn convert_fraction_to_exchange_rate(frac: Fraction) -> Result<ExchangeRate> {
+    let numerator = match frac.numer() {
+        Some(e) => e,
+        None => return Err(anyhow!("unable to get numerator")),
+    };
+    let denominator = match frac.denom() {
+        Some(e) => e,
+        None => return Err(anyhow!("unable to get denominator")),
+    };
+    Ok(ExchangeRate {
+        numerator:   *numerator,
+        denominator: *denominator,
+    })
+}
+
+async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> f64 {
+    // TODO: replace ADA with CCD
+    let params = json!({"ccy1": "EUR", "ccy2": "ADA"});
+
+    let mut interval =
+        tokio::time::interval(tokio::time::Duration::from_secs(RETRY_BITFINEX_INTERVAL));
+    loop {
+        interval.tick().await;
+
+        let resp = match client.post(BITFINEX_URL).json(&params).send().await {
+            Ok(o) => o,
+            Err(e) => {
+                log::warn!("Unable to retrieve from bitfinex: {:#?}", e);
+                continue;
+            }
+        };
+
+        if resp.status().is_success() {
+            // Bitfinex api speficies that a succesful status means the response is a json
+            // array with a single float number.
+            match resp.json::<Vec<f64>>().await {
+                Ok(v) => return v[0],
+                Err(_) => {
+                    log::error!("Unable to parse response from bitfinex as JSON (Breaking API)")
+                }
+            };
+        } else {
+            log::error!("Error response from bitfinex: {:?}", resp.status());
+        };
+    }
+}
+
 /**
  * Get the new MicroCCD/Euro exchange rate
  */
 async fn pull_exchange_rate(client: reqwest::Client) -> Result<ExchangeRate> {
-    let params = json!({"ccy1": "EUR", "ccy2": "ADA"});
-    let req = client.post("https://api-pub.bitfinex.com/v2/calc/fx").json(&params);
-    let resp = req.send().await?.json::<Vec<f64>>().await?;
-    log::debug!("Raw exchange rate CCD/EUR polled: {:#?}", resp);
-    let frac = Fraction::from(resp[0]);
-    let numerator = match frac.numer() {
-        Some(e) => Ok(e),
-        None => Err(anyhow!("unable to get numerator")),
-    }?;
-    let denominator = match frac.denom() {
-        Some(e) => Ok(e),
-        None => Err(anyhow!("unable to get denominator")),
-    }?;
-
+    let raw_rate = request_exchange_rate_bitfinex(client).await;
+    log::debug!("Raw exchange rate CCD/EUR polled from bitfinex: {:#?}", raw_rate);
+    let ccd_rate = Fraction::from(raw_rate);
     // We multiply with 1/1000000 MicroCCD/CCD
-    Ok(ExchangeRate {
-        numerator:   *numerator,
-        denominator: *denominator * 1000000,
-    })
+    let micro_per_ccd = Fraction::new(1u64, 1000000u64);
+    let micro_ccd_rate = ccd_rate * micro_per_ccd;
+    convert_fraction_to_exchange_rate(micro_ccd_rate)
 }
 
 async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSummary> {
@@ -127,35 +178,66 @@ async fn get_signer(
     Ok(signer)
 }
 
+fn construct_block_item(
+    seq_number: UpdateSequenceNumber,
+    signer: &[(UpdateKeysIndex, KeyPair)],
+    exchange_rate: ExchangeRate,
+) -> BlockItem<Payload> {
+    let effective_time = TransactionTime::from_seconds(
+        chrono::offset::Utc::now().timestamp() as u64 + UPDATE_EFFECTIVE_TIME_OFFSET,
+    );
+    let timeout = TransactionTime::from_seconds(
+        chrono::offset::Utc::now().timestamp() as u64 + UPDATE_EXPIRY_OFFSET,
+    );
+    let payload = UpdatePayload::MicroGTUPerEuro(exchange_rate);
+    update::update(signer, seq_number, effective_time, timeout, payload).into()
+}
+
 async fn send_update(
-    summary: BlockSummary,
-    signer: Vec<(UpdateKeysIndex, KeyPair)>,
+    mut seq_number: UpdateSequenceNumber,
+    signer: &[(UpdateKeysIndex, KeyPair)],
     exchange_rate: ExchangeRate,
     mut client: endpoints::Client,
-) -> Result<hashes::TransactionHash> {
-    let seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
-    let effective_time =
-        TransactionTime::from_seconds(chrono::offset::Utc::now().timestamp() as u64 + 301); // 2.5min effectiveTime.
-    let timeout =
-        TransactionTime::from_seconds(chrono::offset::Utc::now().timestamp() as u64 + 300); // 5min expiry.
-    let payload = UpdatePayload::MicroGTUPerEuro(exchange_rate);
-    let block_item: BlockItem<Payload> =
-        update::update(signer.as_slice(), seq_number, effective_time, timeout, payload).into();
+) -> (hashes::TransactionHash, UpdateSequenceNumber) {
+    let mut get_new_seq_number = false;
 
-    let response = client
-        .send_transaction(DEFAULT_NETWORK_ID, &block_item)
-        .await
-        .context("Could not send transaction.")?;
-    anyhow::ensure!(response, "Submission of the update instruction failed.");
-    Ok(block_item.hash())
+    let mut interval =
+        tokio::time::interval(tokio::time::Duration::from_secs(RETRY_SUBMISSION_INTERVAL));
+    loop {
+        interval.tick().await;
+
+        if get_new_seq_number {
+            let new_summary = match get_block_summary(client.clone()).await {
+                Ok(o) => o,
+                Err(e) => {
+                    log::warn!("Unable to pull new sequence number due to: {:#?}", e);
+                    continue;
+                }
+            };
+            seq_number = new_summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
+            get_new_seq_number = false;
+        }
+
+        let block_item = construct_block_item(seq_number, signer, exchange_rate);
+        match client.send_transaction(DEFAULT_NETWORK_ID, &block_item).await {
+            Ok(true) => return (block_item.hash(), seq_number),
+            Ok(false) => {
+                log::error!("Sending update was rejected, id: {:#?}.", block_item.hash());
+                // We assume that the reason for rejection is an incorrect sequence number
+                // (because it is the only one we can solve)
+                get_new_seq_number = true;
+            }
+            Err(e) => log::warn!("Error occurred while sending update: {:#?}", e),
+        }
+    }
 }
 
 async fn check_update_status(
     submission_id: hashes::TransactionHash,
     mut client: endpoints::Client,
 ) -> Result<()> {
-    // wait until it's finalized.
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+    let mut interval =
+        tokio::time::interval(tokio::time::Duration::from_secs(CHECK_SUBMISSION_STATUS_INTERVAL));
     loop {
         interval.tick().await;
         match client
@@ -199,15 +281,62 @@ async fn main() -> Result<()> {
     log_builder.filter_module(module_path!(), app.log_level);
     log_builder.init();
 
-    let client = reqwest::Client::new();
-    log::debug!("Polling for exchange rate");
-    let rate = pull_exchange_rate(client).await?;
-    log::info!("New exchange rate polled: {:#?}", rate);
+    // Setup (Relaxed error handling)
     let summary = get_block_summary(node_client.clone()).await?;
+    let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
+    log::info!("Loaded initial block summary");
     let signer = get_signer(app.governance_keys, &summary).await?;
     log::info!("keys loaded");
-    let submission_id = send_update(summary, signer, rate, node_client.clone()).await?;
-    log::info!("sent update with submission id: {:#?}", submission_id);
-    check_update_status(submission_id, node_client.clone()).await?;
-    Ok(())
+    let client = reqwest::Client::new();
+
+    let mut interval =
+        tokio::time::interval(tokio::time::Duration::from_secs(app.update_interval * 60));
+
+    // Main Loop
+    log::info!("Entering main loop");
+    loop {
+        log::debug!("Starting new main loop cycle: waiting for interval");
+        interval.tick().await;
+        log::debug!("Polling for exchange rate");
+        let rate = match pull_exchange_rate(client.clone()).await {
+            Ok(rate) => rate,
+            Err(e) => {
+                log::error!("Unable to determine the current exchange rate: {:#?}", e);
+                continue;
+            }
+        };
+        log::info!("New exchange rate polled: {:#?}", rate);
+
+        let (submission_id, new_seq_number) =
+            send_update(seq_number, &signer, rate, node_client.clone()).await;
+        // new_seq_number should be the sequence number, which was used to send the
+        // update.
+        seq_number = UpdateSequenceNumber {
+            number: new_seq_number.number + 1,
+        };
+
+        log::info!("sent update with submission id: {:#?}", submission_id);
+
+        match tokio::time::timeout(
+            tokio::time::Duration::from_secs(MAX_TIME_CHECK_SUBMISSION),
+            check_update_status(submission_id, node_client.clone()),
+        )
+        .await
+        {
+            Ok(_) => (),
+            Err(_) => {
+                log::error!(
+                    "Was unable to confirm update with id {:#?} within allocated timeframe",
+                    submission_id
+                );
+                continue;
+            }
+        };
+
+        log::info!(
+            "Succesfully updated exchange rate to: {:#?}, with id {:#?}",
+            rate,
+            submission_id
+        );
+    }
 }
