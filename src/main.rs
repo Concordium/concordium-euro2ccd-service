@@ -61,8 +61,8 @@ struct App {
         env = "EURO2CCD_SERVICE_LOG_LEVEL"
     )]
     log_level:       log::LevelFilter,
-    #[structopt(long = "max-change", help = "percentage max change allowed when updating exchange rate.", env = "EURO2CCD_SERVICE_MAX_CHANGE")]
-    max_change: f64,
+    #[structopt(long = "max-change", help = "percentage max change allowed when updating exchange rate. i.e. 1-100", env = "EURO2CCD_SERVICE_MAX_CHANGE")]
+    max_change: u8,
 }
 
 fn convert_fraction_to_exchange_rate(frac: Fraction) -> Result<ExchangeRate> {
@@ -125,13 +125,34 @@ async fn pull_exchange_rate(client: reqwest::Client) -> Result<ExchangeRate> {
     convert_fraction_to_exchange_rate(micro_ccd_rate)
 }
 
-fn ensure_exchange_rate_within_bounds(current_exchange_rate: ExchangeRate, new_exchange_rate: ExchangeRate, max_change: f64) -> bool {
+fn bound_exchange_rate_change(current_exchange_rate: ExchangeRate, new_exchange_rate: ExchangeRate, max_change: u8) -> Result<ExchangeRate> {
     let current = Fraction::new(current_exchange_rate.numerator, current_exchange_rate.denominator);
     let new = Fraction::new(new_exchange_rate.numerator, new_exchange_rate.denominator);
-    let max_increase = current *  Fraction::from(1f64 + max_change);
-    let max_decrease = current *  Fraction::from(1f64 - max_change);
-    log::debug!("Allowed update range is {}-{}.", max_decrease, max_increase);
-    new > max_decrease && new < max_increase
+
+    let increase = true;
+
+    let diff =  if current > new {
+        increase = true;
+        current - new
+    } else {
+        increase = false;
+        new - current
+    };
+    
+    let temp = current / Fraction::new(1u64, 100u64);
+    let max_change_concrete = temp * Fraction::new( max_change, 1u64);
+    log::debug!("Allowed change is {} ({} %).", max_change_concrete, max_change);
+
+    if (diff > max_change_concrete) {
+        let bounded = if increase {
+            current + max_change_concrete
+        } else {
+            current - max_change_concrete
+        }
+        log::warn!("New exchange rate was outside allowed range, bounding it to {}", bounded);
+        return convert_fraction_to_exchange_rate(current - max_change_concrete);
+    }
+    return Ok(new_exchange_rate);
 }
 
 async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSummary> {
@@ -285,6 +306,9 @@ async fn main() -> Result<()> {
         App::from_clap(&matches)
     };
 
+    // Setup
+    // (Stop if error occurs)
+
     let node_client = endpoints::Client::connect(app.endpoint, app.token).await?;
 
     let mut log_builder = env_logger::Builder::from_env("TRANSACTION_LOGGER_LOG");
@@ -292,8 +316,11 @@ async fn main() -> Result<()> {
     log_builder.filter_module(module_path!(), app.log_level);
     log_builder.init();
 
-    // Setup (Relaxed error handling)
     let max_change = app.max_change;
+    if max_change > 99 || max_change < 1 {
+        log::error!("Max change outside of allowed range (1-99): {} ", max_change);
+        return Error(anyhow!("Error during startup"))
+    }
 
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
@@ -307,6 +334,7 @@ async fn main() -> Result<()> {
         tokio::time::interval(tokio::time::Duration::from_secs(app.update_interval * 60));
 
     // Main Loop
+
     log::info!("Entering main loop");
     loop {
         log::debug!("Starting new main loop cycle: waiting for interval");
@@ -320,11 +348,13 @@ async fn main() -> Result<()> {
             }
         };
         log::info!("New exchange rate polled: {:#?}", rate);
-
-        if !ensure_exchange_rate_within_bounds(prev_rate, rate, max_change) {
-            log::warn!("New exchange rate outside of bounds: {:#?}", rate);
-            continue
-        }
+        let rate = match bound_exchange_rate_change(prev_rate, rate, max_change) {
+            Ok(rate) => rate,
+            Err(e) => {
+                log::error!("Bounding exchange rate failed: {:#?}", e);
+                continue;
+            }
+        };
 
         let (submission_id, new_seq_number) =
             send_update(seq_number, &signer, rate, node_client.clone()).await;
