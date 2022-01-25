@@ -1,7 +1,11 @@
+mod exchanges;
+mod helpers;
+
 use anyhow::{anyhow, Context, Result};
 use clap::AppSettings;
+use exchanges::{pull_exchange_rate, Exchange};
 use fraction::Fraction;
-use serde_json::json;
+use helpers::convert_fraction_to_exchange_rate;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -23,8 +27,6 @@ use crypto_common::{
 const MAX_TIME_CHECK_SUBMISSION: u64 = 60; // seconds
 const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 3; // seconds
 const RETRY_SUBMISSION_INTERVAL: u64 = 10; // seconds
-const RETRY_BITFINEX_INTERVAL: u64 = 10; // seconds
-const BITFINEX_URL: &str = "https://api-pub.bitfinex.com/v2/calc/fx";
 const UPDATE_EXPIRY_OFFSET: u64 = 300; // seconds
 const UPDATE_EFFECTIVE_TIME_OFFSET: u64 = 301; // seconds
 
@@ -61,94 +63,49 @@ struct App {
         env = "EURO2CCD_SERVICE_LOG_LEVEL"
     )]
     log_level:       log::LevelFilter,
-    #[structopt(long = "max-change", help = "percentage max change allowed when updating exchange rate. i.e. 1-100", env = "EURO2CCD_SERVICE_MAX_CHANGE")]
+    #[structopt(
+        long = "max-change",
+        help = "percentage max change allowed when updating exchange rate. i.e. 1-99",
+        env = "EURO2CCD_SERVICE_MAX_CHANGE"
+    )]
+    max_change:      u8,
+    #[structopt(
+        long = "local-exchange",
+        help = "If set to true, pulls exchange rate from localhost:8111 (see local_exchange \
+                subproject)",
+        env = "EURO2CCD_SERVICE_LOCAL_EXCHANGE"
+    )]
+    local_exchange:  bool,
+}
+
+fn bound_exchange_rate_change(
+    current_exchange_rate: ExchangeRate,
+    new_exchange_rate: ExchangeRate,
     max_change: u8,
-}
-
-fn convert_fraction_to_exchange_rate(frac: Fraction) -> Result<ExchangeRate> {
-    let numerator = match frac.numer() {
-        Some(e) => e,
-        None => return Err(anyhow!("unable to get numerator")),
-    };
-    let denominator = match frac.denom() {
-        Some(e) => e,
-        None => return Err(anyhow!("unable to get denominator")),
-    };
-    Ok(ExchangeRate {
-        numerator:   *numerator,
-        denominator: *denominator,
-    })
-}
-
-async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> f64 {
-    // TODO: replace ADA with CCD
-    let params = json!({"ccy1": "EUR", "ccy2": "ADA"});
-
-    let mut interval =
-        tokio::time::interval(tokio::time::Duration::from_secs(RETRY_BITFINEX_INTERVAL));
-    loop {
-        interval.tick().await;
-
-        let resp = match client.post(BITFINEX_URL).json(&params).send().await {
-            Ok(o) => o,
-            Err(e) => {
-                log::warn!("Unable to retrieve from bitfinex: {:#?}", e);
-                continue;
-            }
-        };
-
-        if resp.status().is_success() {
-            // Bitfinex api speficies that a succesful status means the response is a json
-            // array with a single float number.
-            match resp.json::<Vec<f64>>().await {
-                Ok(v) => return v[0],
-                Err(_) => {
-                    log::error!("Unable to parse response from bitfinex as JSON (Breaking API)")
-                }
-            };
-        } else {
-            log::error!("Error response from bitfinex: {:?}", resp.status());
-        };
-    }
-}
-
-/**
- * Get the new MicroCCD/Euro exchange rate
- */
-async fn pull_exchange_rate(client: reqwest::Client) -> Result<ExchangeRate> {
-    let raw_rate = request_exchange_rate_bitfinex(client).await;
-    log::debug!("Raw exchange rate CCD/EUR polled from bitfinex: {:#?}", raw_rate);
-    let ccd_rate = Fraction::from(raw_rate);
-    // We multiply with 1/1000000 MicroCCD/CCD
-    let micro_per_ccd = Fraction::new(1u64, 1000000u64);
-    let micro_ccd_rate = ccd_rate * micro_per_ccd;
-    convert_fraction_to_exchange_rate(micro_ccd_rate)
-}
-
-fn bound_exchange_rate_change(current_exchange_rate: ExchangeRate, new_exchange_rate: ExchangeRate, max_change: u8) -> Result<ExchangeRate> {
+) -> Result<ExchangeRate> {
     let current = Fraction::new(current_exchange_rate.numerator, current_exchange_rate.denominator);
     let new = Fraction::new(new_exchange_rate.numerator, new_exchange_rate.denominator);
 
-    let increase = true;
+    let increase;
 
-    let diff =  if current > new {
+    let diff = if current > new {
         increase = true;
         current - new
     } else {
         increase = false;
         new - current
     };
-    
+
     let temp = current / Fraction::new(1u64, 100u64);
-    let max_change_concrete = temp * Fraction::new( max_change, 1u64);
+    let max_change_concrete = temp * Fraction::new(max_change, 1u64);
     log::debug!("Allowed change is {} ({} %).", max_change_concrete, max_change);
 
-    if (diff > max_change_concrete) {
+    if diff > max_change_concrete {
         let bounded = if increase {
             current + max_change_concrete
         } else {
             current - max_change_concrete
-        }
+        };
         log::warn!("New exchange rate was outside allowed range, bounding it to {}", bounded);
         return convert_fraction_to_exchange_rate(current - max_change_concrete);
     }
@@ -319,19 +276,23 @@ async fn main() -> Result<()> {
     let max_change = app.max_change;
     if max_change > 99 || max_change < 1 {
         log::error!("Max change outside of allowed range (1-99): {} ", max_change);
-        return Error(anyhow!("Error during startup"))
+        return Err(anyhow!("Error during startup"));
     }
 
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
     let mut prev_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
-    log::info!("Loaded initial block summary, current exchange rate: {:#?}" , prev_rate);
+    log::info!("Loaded initial block summary, current exchange rate: {:#?}", prev_rate);
     let signer = get_signer(app.governance_keys, &summary).await?;
     log::info!("keys loaded");
-    let client = reqwest::Client::new();
 
     let mut interval =
         tokio::time::interval(tokio::time::Duration::from_secs(app.update_interval * 60));
+
+    let exchange = match app.local_exchange {
+        true => Exchange::Local,
+        false => Exchange::Bitfinex,
+    };
 
     // Main Loop
 
@@ -340,7 +301,7 @@ async fn main() -> Result<()> {
         log::debug!("Starting new main loop cycle: waiting for interval");
         interval.tick().await;
         log::debug!("Polling for exchange rate");
-        let rate = match pull_exchange_rate(client.clone()).await {
+        let rate = match pull_exchange_rate(exchange).await {
             Ok(rate) => rate,
             Err(e) => {
                 log::error!("Unable to determine the current exchange rate: {:#?}", e);
@@ -382,10 +343,6 @@ async fn main() -> Result<()> {
             }
         };
 
-        log::info!(
-            "Succesfully updated exchange rate to: {:#?}, with id {}",
-            rate,
-            submission_id
-        );
+        log::info!("Succesfully updated exchange rate to: {:#?}, with id {}", rate, submission_id);
     }
 }

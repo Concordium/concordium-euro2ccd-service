@@ -1,0 +1,20 @@
+[package]
+name = "euro2ccd-service-local-exchange"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+structopt = "0.3.23"
+clap = "2.33.3"
+env_logger = "0.9.0"
+log = "0.4"
+tokio = {version = "1.8", features = ["full"]}
+warp = "0.3"
+openssl = {version = "0.10", features = ["vendored"]}
+reqwest = {version = "0.11.9", features = ["json"]}
+serde_json = "1.0.60"
+anyhow = "1"
+fraction = "0.9.0"
+chrono = {version = "0.4", features = ["serde"] }
