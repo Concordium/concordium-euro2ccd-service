@@ -73,7 +73,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bound_1() {
+    fn bound_simple_decrease() {
         let current_rate = ExchangeRate {
             numerator:   7,
             denominator: 10,
@@ -92,12 +92,12 @@ mod tests {
                 assert_eq!(bounded.numerator, result.numerator);
                 assert_eq!(bounded.denominator, result.denominator);
             }
-            Err(e) => assert!(false, "{}", e),
+            Err(e) => panic!("{}", e),
         }
     }
 
     #[test]
-    fn bound_2() {
+    fn bound_simple_increase() {
         let current_rate = ExchangeRate {
             numerator:   7,
             denominator: 10,
@@ -116,12 +116,12 @@ mod tests {
                 assert_eq!(bounded.numerator, result.numerator);
                 assert_eq!(bounded.denominator, result.denominator);
             }
-            Err(e) => assert!(false, "{}", e),
+            Err(e) => panic!("{}", e),
         }
     }
 
     #[test]
-    fn bound_3() {
+    fn bound_large() {
         let current_rate = ExchangeRate {
             numerator:   269873210673,
             denominator: 250000000000000000,
@@ -140,12 +140,12 @@ mod tests {
                 assert_eq!(bounded.numerator, result.numerator);
                 assert_eq!(bounded.denominator, result.denominator);
             }
-            Err(e) => assert!(false, "{}", e),
+            Err(e) => panic!("{}", e),
         }
     }
 
     #[test]
-    fn bound_4() {
+    fn bound_larger() {
         let current_rate = ExchangeRate {
             numerator:   13902531941473,
             denominator: 12500000000000000000,
@@ -164,7 +164,7 @@ mod tests {
                 assert_eq!(bounded.numerator, result.numerator);
                 assert_eq!(bounded.denominator, result.denominator);
             }
-            Err(e) => assert!(false, "{}", e),
+            Err(e) => panic!("{}", e),
         }
     }
 }

@@ -147,15 +147,12 @@ mod tests {
     #[tokio::test]
     async fn test_bitfinex() {
         let client = reqwest::Client::new();
-        match request_exchange_rate_bitfinex(client).await {
-            Some(_) => assert!(true),
-            None => assert!(false),
-        };
+        assert!(request_exchange_rate_bitfinex(client).await.is_some())
     }
 
     #[tokio::test]
-    async fn test_backoff() {
-        let dummy_req = |_c: Option<()>| return futures::future::ready::<Option<()>>(None);
+    async fn test_backoff_lower_bound() {
+        let dummy_req = |_c: Option<()>| futures::future::ready::<Option<()>>(None);
 
         let start = Instant::now();
         request_with_backoff(None, dummy_req, 10, 1).await;
@@ -164,8 +161,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_backoff_2() {
-        let dummy_req = |_c: Option<()>| return futures::future::ready::<Option<()>>(None);
+    async fn test_backoff_upper_bound() {
+        let dummy_req = |_c: Option<()>| futures::future::ready::<Option<()>>(None);
 
         let start = Instant::now();
         request_with_backoff(None, dummy_req, 10, 2).await;
