@@ -1,3 +1,4 @@
+use crate::prometheus::increment_bounded_times;
 use anyhow::{anyhow, Result};
 use concordium_rust_sdk::types::ExchangeRate;
 use fraction::Fraction;
@@ -50,6 +51,7 @@ pub fn bound_exchange_rate_change(
     }
 
     if diff > max_change_concrete {
+        increment_bounded_times();
         let bounded = if increase {
             current + max_change_concrete
         } else {

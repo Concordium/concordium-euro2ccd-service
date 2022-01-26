@@ -1,15 +1,21 @@
 use anyhow::{Context, Result};
 use lazy_static::lazy_static;
-use prometheus::{Gauge, register_gauge, Encoder, TextEncoder, Registry};
+use prometheus::{Gauge, register_gauge, Counter, register_counter, Encoder, TextEncoder, Registry};
 use warp::http::StatusCode;
 use warp::Filter;
 
 lazy_static! {
     static ref EXCHANGE_RATE: Gauge = register_gauge!(
-        "exchange rate",
+        "exchange_rate",
         "Last polled exchange rate."
     )
         .unwrap();
+    static ref BOUNDED_TIMES: Counter = register_counter!(
+        "rates_bounded",
+        "amount of times exchange rate is being bounded."
+    )
+        .unwrap();
+
     pub static ref REGISTRY: Registry = Registry::new();
 }
 
@@ -26,6 +32,7 @@ async fn handle_metrics() -> Result<String> {
 
 pub async fn initialize_prometheus(port: u16) -> Result<()> {
     REGISTRY.register(Box::new(EXCHANGE_RATE.clone())).expect("Unable to register exchange rate gauge");
+    REGISTRY.register(Box::new(BOUNDED_TIMES.clone())).expect("Unable to register bounded times counter");
 
     let metrics_route = warp::path("metrics").then(move || {
         async move {
@@ -50,3 +57,8 @@ pub async fn initialize_prometheus(port: u16) -> Result<()> {
 pub fn update_rate(rate: f64) {
     EXCHANGE_RATE.set(rate)
 }
+
+pub fn increment_bounded_times() {
+    BOUNDED_TIMES.inc()
+}
+

@@ -271,6 +271,7 @@ async fn main() -> Result<()> {
     }
 
     tokio::spawn(prometheus::initialize_prometheus(app.prometheus_port));
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
