@@ -1,4 +1,5 @@
 use crate::helpers::convert_f64_to_exchange_rate;
+use crate::prometheus::push_rate;
 use anyhow::Result;
 use concordium_rust_sdk::types::ExchangeRate;
 use serde_json::json;
@@ -47,7 +48,7 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
     };
 
     if resp.status().is_success() {
-        // Bitfinex api speficies that a succesful status means the response is a json
+        // Bitfinex api specifies that a successful status means the response is a json
         // array with a single float number.
         match resp.json::<Vec<f64>>().await {
             Ok(v) => {
@@ -108,6 +109,7 @@ pub async fn pull_exchange_rate(exchange: Exchange) -> Result<ExchangeRate> {
             request_with_backoff(client, get_local_exchange_rate, INITIAL_RETRY_INTERVAL).await
         }
     };
+    push_rate(ccd_rate);
     // We multiply with 1/1000000 MicroCCD/CCD
     let micro_per_ccd = 1000000f64;
     let micro_ccd_rate = ccd_rate / micro_per_ccd;

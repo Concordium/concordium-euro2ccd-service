@@ -1,6 +1,7 @@
 mod exchanges;
 mod helpers;
 mod secretsmanager;
+mod prometheus;
 
 use anyhow::{anyhow, Context, Result};
 use clap::AppSettings;
@@ -76,6 +77,13 @@ struct App {
         env = "EURO2CCD_SERVICE_MAX_CHANGE"
     )]
     max_change:      u8,
+    #[structopt(
+        long = "prometheus-port",
+        default_value = "8112",
+        help = "Port where prometheus client will serve metrics",
+        env = "EURO2CCD_SERVICE_PROMETHEUS_PORT"
+    )]
+    prometheus_port:      u16,
     #[structopt(
         long = "test",
         help = "If set to true, allows using test parameters (FOR TESTING)",
@@ -261,6 +269,8 @@ async fn main() -> Result<()> {
         log::error!("Max change outside of allowed range (1-99): {} ", max_change);
         return Err(anyhow!("Error during startup"));
     }
+
+    tokio::spawn(prometheus::initialize_prometheus(app.prometheus_port));
 
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
