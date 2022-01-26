@@ -6,11 +6,11 @@ pub fn convert_f64_to_exchange_rate(value: f64) -> Result<ExchangeRate> {
     let frac = Fraction::from(value as f32); // reduce precision, to reduce size of num/denom, to avoid overflow.
     let numerator = match frac.numer() {
         Some(e) => e,
-        None => return Err(anyhow!("unable to get numerator")),
+        None => return Err(anyhow!("Conversion failed: unable to get numerator")),
     };
     let denominator = match frac.denom() {
         Some(e) => e,
-        None => return Err(anyhow!("unable to get denominator")),
+        None => return Err(anyhow!("Conversion failed: unable to get denominator")),
     };
     Ok(ExchangeRate {
         numerator:   *numerator,
@@ -27,6 +27,10 @@ pub fn bound_exchange_rate_change(
         (current_exchange_rate.numerator as f64) / (current_exchange_rate.denominator as f64);
     let new = (new_exchange_rate.numerator as f64) / (new_exchange_rate.denominator as f64);
 
+    if !current.is_finite() || !new.is_finite() {
+        return Err(anyhow!("Converting exchange rates to float resulted in {}, {}", current, new));
+    }
+
     // is the new rate an increase?
     let increase;
 
@@ -41,6 +45,10 @@ pub fn bound_exchange_rate_change(
     let max_change_concrete = (current / 100f64) * (max_change as f64);
     log::debug!("Allowed change is {:?} ({} %).", max_change_concrete, max_change);
 
+    if !max_change_concrete.is_finite() {
+        return Err(anyhow!("Calculating maximum change resulted in {}", max_change_concrete));
+    }
+
     if diff > max_change_concrete {
         let bounded = if increase {
             current + max_change_concrete
@@ -48,6 +56,11 @@ pub fn bound_exchange_rate_change(
             current - max_change_concrete
         };
         log::warn!("New exchange rate was outside allowed range, bounding it to {}", bounded);
+
+        if !bounded.is_finite() {
+            return Err(anyhow!("Bounded value resulted in {}", bounded));
+        }
+
         return convert_f64_to_exchange_rate(bounded);
     }
     Ok(new_exchange_rate)
@@ -94,7 +107,7 @@ mod tests {
         let result = ExchangeRate {
             numerator:   21,
             denominator: 20,
-        }; // ~1.05
+        }; // 1.05
         let max_change = 50u8; // 50 %
         match bound_exchange_rate_change(current_rate, new_rate, max_change) {
             Ok(bounded) => {

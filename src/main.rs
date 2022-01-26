@@ -25,10 +25,9 @@ use std::path::PathBuf;
 use structopt::{clap::ArgGroup, StructOpt};
 
 const MAX_TIME_CHECK_SUBMISSION: u64 = 60; // seconds
-const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 3; // seconds
+const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 5; // seconds
 const RETRY_SUBMISSION_INTERVAL: u64 = 10; // seconds
-const UPDATE_EXPIRY_OFFSET: u64 = 300; // seconds
-const UPDATE_EFFECTIVE_TIME_OFFSET: u64 = 301; // seconds
+const UPDATE_EXPIRY_OFFSET: u64 = 100; // seconds
 
 #[derive(StructOpt)]
 #[structopt(group = ArgGroup::with_name("testing").requires("test").multiple(true))]
@@ -154,9 +153,7 @@ fn construct_block_item(
     signer: &[(UpdateKeysIndex, KeyPair)],
     exchange_rate: ExchangeRate,
 ) -> BlockItem<Payload> {
-    let effective_time = TransactionTime::from_seconds(
-        chrono::offset::Utc::now().timestamp() as u64 + UPDATE_EFFECTIVE_TIME_OFFSET,
-    );
+    let effective_time = 0.into();
     let timeout = TransactionTime::from_seconds(
         chrono::offset::Utc::now().timestamp() as u64 + UPDATE_EXPIRY_OFFSET,
     );
