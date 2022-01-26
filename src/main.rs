@@ -19,8 +19,7 @@ use crypto_common::{
     types::{KeyPair, TransactionTime},
 };
 use exchanges::{pull_exchange_rate, Exchange};
-use fraction::Fraction;
-use helpers::convert_fraction_to_exchange_rate;
+use helpers::bound_exchange_rate_change;
 use secretsmanager::{get_governance_from_aws, get_governance_from_file};
 use std::path::PathBuf;
 use structopt::{clap::ArgGroup, StructOpt};
@@ -60,9 +59,9 @@ struct App {
     secret_name:     String,
     #[structopt(
         long = "update-interval",
-        help = "How often to perform the update, in minutes.",
+        help = "How often to perform the update.",
         env = "EURO2CCD_SERVICE_UPDATE_INTERVAL",
-        default_value = "1"
+        default_value = "60"
     )]
     update_interval: u64,
     #[structopt(
@@ -101,40 +100,6 @@ struct App {
         group = "testing"
     )]
     local_keys:      Option<Vec<PathBuf>>,
-}
-
-fn bound_exchange_rate_change(
-    current_exchange_rate: ExchangeRate,
-    new_exchange_rate: ExchangeRate,
-    max_change: u8,
-) -> Result<ExchangeRate> {
-    let current = Fraction::new(current_exchange_rate.numerator, current_exchange_rate.denominator);
-    let new = Fraction::new(new_exchange_rate.numerator, new_exchange_rate.denominator);
-
-    let increase;
-
-    let diff = if current > new {
-        increase = true;
-        current - new
-    } else {
-        increase = false;
-        new - current
-    };
-
-    let temp = current / Fraction::new(1u64, 100u64);
-    let max_change_concrete = temp * Fraction::new(max_change, 1u64);
-    log::debug!("Allowed change is {} ({} %).", max_change_concrete, max_change);
-
-    if diff > max_change_concrete {
-        let bounded = if increase {
-            current + max_change_concrete
-        } else {
-            current - max_change_concrete
-        };
-        log::warn!("New exchange rate was outside allowed range, bounding it to {}", bounded);
-        return convert_fraction_to_exchange_rate(current - max_change_concrete);
-    }
-    Ok(new_exchange_rate)
 }
 
 async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSummary> {
@@ -283,16 +248,16 @@ async fn main() -> Result<()> {
     // Setup
     // (Stop if error occurs)
 
-    if app.test {
-        log::warn!("Running with test options enabled!");
-    }
-
     let node_client = endpoints::Client::connect(app.endpoint, app.token).await?;
 
     let mut log_builder = env_logger::Builder::from_env("TRANSACTION_LOGGER_LOG");
     // only log the current module (main).
     log_builder.filter_module(module_path!(), app.log_level);
     log_builder.init();
+
+    if app.test {
+        log::warn!("Running with test options enabled!");
+    }
 
     let max_change = app.max_change;
     if !(1..=99).contains(&max_change) {
@@ -313,8 +278,7 @@ async fn main() -> Result<()> {
     let signer = get_signer(secret_keys, &summary).await?;
     log::info!("keys loaded");
 
-    let mut interval =
-        tokio::time::interval(tokio::time::Duration::from_secs(app.update_interval * 60));
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(app.update_interval));
 
     let exchange = match app.local_exchange {
         true => Exchange::Local,

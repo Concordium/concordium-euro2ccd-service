@@ -1,7 +1,6 @@
-use crate::helpers::convert_fraction_to_exchange_rate;
+use crate::helpers::convert_f64_to_exchange_rate;
 use anyhow::Result;
 use concordium_rust_sdk::types::ExchangeRate;
-use fraction::Fraction;
 use serde_json::json;
 
 #[derive(Copy, Clone)]
@@ -13,7 +12,7 @@ pub enum Exchange {
 const RETRY_BITFINEX_INTERVAL: u64 = 10; // seconds
 const BITFINEX_URL: &str = "https://api-pub.bitfinex.com/v2/calc/fx";
 
-async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Fraction {
+async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> f64 {
     // TODO: replace ADA with CCD
     let params = json!({"ccy1": "EUR", "ccy2": "ADA"});
 
@@ -37,7 +36,7 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Fraction {
                 Ok(v) => {
                     let raw_rate = v[0];
                     log::debug!("Raw exchange rate CCD/EUR polled from bitfinex: {:#?}", raw_rate);
-                    return Fraction::from(raw_rate);
+                    return raw_rate;
                 }
                 Err(_) => {
                     log::error!("Unable to parse response from bitfinex as JSON (Breaking API)")
@@ -51,7 +50,7 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Fraction {
 
 const LOCAL_URL: &str = "http://127.0.0.1:8111/rate";
 
-async fn get_local_exchange_rate(client: reqwest::Client) -> Fraction {
+async fn get_local_exchange_rate(client: reqwest::Client) -> f64 {
     let mut interval =
         tokio::time::interval(tokio::time::Duration::from_secs(RETRY_BITFINEX_INTERVAL));
     loop {
@@ -71,7 +70,7 @@ async fn get_local_exchange_rate(client: reqwest::Client) -> Fraction {
                 Ok(v) => {
                     let raw_rate = v[0];
                     log::debug!("Raw exchange rate CCD/EUR polled from local: {:#?}", raw_rate);
-                    return Fraction::from(raw_rate);
+                    return raw_rate;
                 }
                 Err(_) => {
                     log::error!("Unable to parse response from local as JSON")
@@ -93,7 +92,7 @@ pub async fn pull_exchange_rate(exchange: Exchange) -> Result<ExchangeRate> {
         Exchange::Local => get_local_exchange_rate(client).await,
     };
     // We multiply with 1/1000000 MicroCCD/CCD
-    let micro_per_ccd = Fraction::new(1u64, 1000000u64);
-    let micro_ccd_rate = ccd_rate * micro_per_ccd;
-    convert_fraction_to_exchange_rate(micro_ccd_rate)
+    let micro_per_ccd = 1000000f64;
+    let micro_ccd_rate = ccd_rate / micro_per_ccd;
+    convert_f64_to_exchange_rate(micro_ccd_rate)
 }
