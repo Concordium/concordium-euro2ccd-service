@@ -1,7 +1,7 @@
 mod exchanges;
 mod helpers;
-mod secretsmanager;
 mod prometheus;
+mod secretsmanager;
 
 use anyhow::{anyhow, Context, Result};
 use clap::AppSettings;
@@ -83,7 +83,7 @@ struct App {
         help = "Port where prometheus client will serve metrics",
         env = "EURO2CCD_SERVICE_PROMETHEUS_PORT"
     )]
-    prometheus_port:      u16,
+    prometheus_port: u16,
     #[structopt(
         long = "test",
         help = "If set to true, allows using test parameters (FOR TESTING)",

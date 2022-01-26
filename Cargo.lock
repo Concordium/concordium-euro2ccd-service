@@ -1061,6 +1061,7 @@ dependencies = [
  "crypto_common",
  "env_logger",
  "fraction",
+ "futures",
  "lazy_static",
  "log",
  "openssl",

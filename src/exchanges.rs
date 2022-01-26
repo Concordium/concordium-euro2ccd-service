@@ -1,6 +1,5 @@
-use crate::helpers::convert_f64_to_exchange_rate;
-use crate::prometheus::update_rate;
-use anyhow::Result;
+use crate::{helpers::convert_f64_to_exchange_rate, prometheus::update_rate};
+use anyhow::{anyhow, Result};
 use concordium_rust_sdk::types::ExchangeRate;
 use serde_json::json;
 use std::future::Future;
@@ -11,22 +10,30 @@ pub enum Exchange {
     Local,
 }
 
-// TODO: stop the backoff after some number of tries (when multiple sources are
-// added)
-async fn request_with_backoff<Fut, T>(
-    client: reqwest::Client,
-    request_fn: impl Fn(reqwest::Client) -> Fut,
+const MAX_RETRIES: u64 = 5;
+
+async fn request_with_backoff<Fut, T, In>(
+    client: In,
+    request_fn: impl Fn(In) -> Fut,
     initial_delay: u64,
-) -> T
+    max_retries: u64,
+) -> Option<T>
 where
+    In: Clone,
     Fut: Future<Output = Option<T>>, {
     let mut timeout = initial_delay;
+    let mut retries = max_retries;
     loop {
         if let Some(i) = request_fn(client.clone()).await {
-            return i;
+            return Some(i);
         }
 
         log::warn!("Request not succesful. Waiting for {} seconds until trying again", timeout);
+
+        if retries == 0 {
+            return None;
+        }
+        retries -= 1;
         tokio::time::sleep(tokio::time::Duration::from_secs(timeout)).await;
         timeout *= 2;
     }
@@ -100,18 +107,69 @@ async fn get_local_exchange_rate(client: reqwest::Client) -> Option<f64> {
  */
 pub async fn pull_exchange_rate(exchange: Exchange) -> Result<ExchangeRate> {
     let client = reqwest::Client::new();
-    let ccd_rate = match exchange {
+    let ccd_rate_opt = match exchange {
         Exchange::Bitfinex => {
-            request_with_backoff(client, request_exchange_rate_bitfinex, INITIAL_RETRY_INTERVAL)
-                .await
+            request_with_backoff(
+                client,
+                request_exchange_rate_bitfinex,
+                INITIAL_RETRY_INTERVAL,
+                MAX_RETRIES,
+            )
+            .await
         }
         Exchange::Local => {
-            request_with_backoff(client, get_local_exchange_rate, INITIAL_RETRY_INTERVAL).await
+            request_with_backoff(
+                client,
+                get_local_exchange_rate,
+                INITIAL_RETRY_INTERVAL,
+                MAX_RETRIES,
+            )
+            .await
         }
+    };
+
+    let ccd_rate = match ccd_rate_opt {
+        Some(i) => i,
+        None => return Err(anyhow!("Max retries exceeded, unable to pull exchange rate")),
     };
     update_rate(ccd_rate);
     // We multiply with 1/1000000 MicroCCD/CCD
     let micro_per_ccd = 1000000f64;
     let micro_ccd_rate = ccd_rate / micro_per_ccd;
     convert_f64_to_exchange_rate(micro_ccd_rate)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::Instant;
+
+    #[tokio::test]
+    async fn test_bitfinex() {
+        let client = reqwest::Client::new();
+        match request_exchange_rate_bitfinex(client).await {
+            Some(_) => assert!(true),
+            None => assert!(false),
+        };
+    }
+
+    #[tokio::test]
+    async fn test_backoff() {
+        let dummy_req = |_c: Option<()>| return futures::future::ready::<Option<()>>(None);
+
+        let start = Instant::now();
+        request_with_backoff(None, dummy_req, 10, 1).await;
+        let duration = start.elapsed();
+        assert!(duration <= std::time::Duration::from_secs(30)); // 10 + 20
+    }
+
+    #[tokio::test]
+    async fn test_backoff_2() {
+        let dummy_req = |_c: Option<()>| return futures::future::ready::<Option<()>>(None);
+
+        let start = Instant::now();
+        request_with_backoff(None, dummy_req, 10, 2).await;
+        let duration = start.elapsed();
+        assert!(duration >= std::time::Duration::from_secs(30)); // 10 + 20
+    }
 }
