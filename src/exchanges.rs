@@ -1,6 +1,5 @@
-use crate::{helpers::convert_f64_to_exchange_rate, prometheus::update_rate};
+use crate::prometheus::update_rate;
 use anyhow::{anyhow, Result};
-use concordium_rust_sdk::types::ExchangeRate;
 use serde_json::json;
 use std::future::Future;
 
@@ -12,19 +11,19 @@ pub enum Exchange {
 
 const MAX_RETRIES: u64 = 5;
 
-async fn request_with_backoff<Fut, T, In>(
-    client: In,
-    request_fn: impl Fn(In) -> Fut,
+async fn request_with_backoff<Fut, T, Input>(
+    input: Input,
+    request_fn: impl Fn(Input) -> Fut,
     initial_delay: u64,
     max_retries: u64,
 ) -> Option<T>
 where
-    In: Clone,
+    Input: Clone,
     Fut: Future<Output = Option<T>>, {
     let mut timeout = initial_delay;
     let mut retries = max_retries;
     loop {
-        if let Some(i) = request_fn(client.clone()).await {
+        if let Some(i) = request_fn(input.clone()).await {
             return Some(i);
         }
 
@@ -84,8 +83,6 @@ async fn get_local_exchange_rate(client: reqwest::Client) -> Option<f64> {
         }
     };
     if resp.status().is_success() {
-        // Bitfinex api speficies that a succesful status means the response is a json
-        // array with a single float number.
         match resp.json::<Vec<f64>>().await {
             Ok(v) => {
                 let raw_rate = v[0];
@@ -105,7 +102,7 @@ async fn get_local_exchange_rate(client: reqwest::Client) -> Option<f64> {
 /**
  * Get the new MicroCCD/Euro exchange rate
  */
-pub async fn pull_exchange_rate(exchange: Exchange) -> Result<ExchangeRate> {
+pub async fn pull_exchange_rate(exchange: Exchange) -> Result<f64> {
     let client = reqwest::Client::new();
     let ccd_rate_opt = match exchange {
         Exchange::Bitfinex => {
@@ -136,7 +133,7 @@ pub async fn pull_exchange_rate(exchange: Exchange) -> Result<ExchangeRate> {
     // We multiply with 1/1000000 MicroCCD/CCD
     let micro_per_ccd = 1000000f64;
     let micro_ccd_rate = ccd_rate / micro_per_ccd;
-    convert_f64_to_exchange_rate(micro_ccd_rate)
+    Ok(micro_ccd_rate)
 }
 
 #[cfg(test)]
@@ -145,7 +142,7 @@ mod tests {
     use tokio::time::Instant;
 
     #[tokio::test]
-    async fn test_bitfinex() {
+    async fn test_ping_bitfinex() {
         let client = reqwest::Client::new();
         assert!(request_exchange_rate_bitfinex(client).await.is_some())
     }

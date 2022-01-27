@@ -24,6 +24,7 @@ use helpers::bound_exchange_rate_change;
 use secretsmanager::{get_governance_from_aws, get_governance_from_file};
 use std::path::PathBuf;
 use structopt::{clap::ArgGroup, StructOpt};
+use tokio::time::{interval, sleep, timeout, Duration};
 
 const MAX_TIME_CHECK_SUBMISSION: u64 = 60; // seconds
 const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 5; // seconds
@@ -38,7 +39,7 @@ struct App {
         help = "GRPC interface of the node(s).",
         default_value = "http://localhost:10000",
         use_delimiter = true,
-        env = "EURO2CCD_SERVICE_NODES"
+        env = "EURO2CCD_SERVICE_NODE"
     )]
     endpoint:        endpoints::Endpoint,
     #[structopt(
@@ -53,20 +54,20 @@ struct App {
         help = "Secret name on AWS.",
         env = "EURO2CCD_SERVICE_SECRET_NAME",
         default_value = "secret-dummy",
-        required_unless = "test",
+        required_unless = "local-keys",
         conflicts_with = "local-keys"
     )]
     secret_name:     String,
     #[structopt(
         long = "update-interval",
-        help = "How often to perform the update.",
+        help = "How often to perform the update. (In seconds)",
         env = "EURO2CCD_SERVICE_UPDATE_INTERVAL",
         default_value = "60"
     )]
     update_interval: u64,
     #[structopt(
         long = "log-level",
-        default_value = "off",
+        default_value = "info",
         help = "Maximum log level.",
         env = "EURO2CCD_SERVICE_LOG_LEVEL"
     )]
@@ -86,7 +87,7 @@ struct App {
     prometheus_port: u16,
     #[structopt(
         long = "test",
-        help = "If set to true, allows using test parameters (FOR TESTING)",
+        help = "If set, allows using test parameters.",
         env = "EURO2CCD_SERVICE_TEST",
         group = "testing"
     )]
@@ -101,8 +102,8 @@ struct App {
     local_exchange:  bool,
     #[structopt(
         long = "local-keys",
-        help = "If given, the service uses local governance keys instead of pulling them from \
-                aws. (FOR TESTING) ",
+        help = "If given, the service uses local governance keys in specified file instead of \
+                pulling them from aws. (FOR TESTING) ",
         env = "EURO2CCD_SERVICE_LOCAL_KEYS",
         group = "testing"
     )]
@@ -115,8 +116,6 @@ async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSu
         .await
         .context("Could not obtain status of consensus.")?;
 
-    // Get the key indices, as well as the next sequence number from the last
-    // finalized block.
     let summary: BlockSummary = node_client
         .get_block_summary(&consensus_status.last_finalized_block)
         .await
@@ -177,8 +176,7 @@ async fn send_update(
 ) -> (hashes::TransactionHash, UpdateSequenceNumber) {
     let mut get_new_seq_number = false;
 
-    let mut interval =
-        tokio::time::interval(tokio::time::Duration::from_secs(RETRY_SUBMISSION_INTERVAL));
+    let mut interval = interval(Duration::from_secs(RETRY_SUBMISSION_INTERVAL));
     loop {
         interval.tick().await;
 
@@ -186,7 +184,7 @@ async fn send_update(
             let new_summary = match get_block_summary(client.clone()).await {
                 Ok(o) => o,
                 Err(e) => {
-                    log::warn!("Unable to pull new sequence number due to: {:#?}", e);
+                    log::error!("Unable to pull new sequence number due to: {:#?}", e);
                     continue;
                 }
             };
@@ -203,7 +201,7 @@ async fn send_update(
                 // (because it is the only one we can solve)
                 get_new_seq_number = true;
             }
-            Err(e) => log::warn!("Error occurred while sending update: {:#?}", e),
+            Err(e) => log::error!("Error occurred while sending update: {:#?}", e),
         }
     }
 }
@@ -212,8 +210,7 @@ async fn check_update_status(
     submission_id: hashes::TransactionHash,
     mut client: endpoints::Client,
 ) -> Result<()> {
-    let mut interval =
-        tokio::time::interval(tokio::time::Duration::from_secs(CHECK_SUBMISSION_STATUS_INTERVAL));
+    let mut interval = interval(Duration::from_secs(CHECK_SUBMISSION_STATUS_INTERVAL));
     loop {
         interval.tick().await;
         match client
@@ -243,9 +240,7 @@ async fn check_update_status(
 #[tokio::main]
 async fn main() -> Result<()> {
     let app = {
-        let app = App::clap()
-        // .setting(AppSettings::ArgRequiredElseHelp)
-            .global_setting(AppSettings::ColoredHelp);
+        let app = App::clap().global_setting(AppSettings::ColoredHelp);
         let matches = app.get_matches();
         App::from_clap(&matches)
     };
@@ -271,7 +266,9 @@ async fn main() -> Result<()> {
     }
 
     tokio::spawn(prometheus::initialize_prometheus(app.prometheus_port));
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    // Short sleep to allow prometheus to start (TODO: Get signal from prometheus
+    // thread instead)
+    sleep(Duration::from_secs(5)).await;
 
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
@@ -286,12 +283,12 @@ async fn main() -> Result<()> {
     let signer = get_signer(secret_keys, &summary).await?;
     log::info!("keys loaded");
 
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(app.update_interval));
-
     let exchange = match app.local_exchange {
         true => Exchange::Local,
         false => Exchange::Bitfinex,
     };
+
+    let mut interval = interval(Duration::from_secs(app.update_interval));
 
     // Main Loop
 
@@ -300,15 +297,15 @@ async fn main() -> Result<()> {
         log::debug!("Starting new main loop cycle: waiting for interval");
         interval.tick().await;
         log::debug!("Polling for exchange rate");
-        let rate = match pull_exchange_rate(exchange).await {
+        let new_rate = match pull_exchange_rate(exchange).await {
             Ok(rate) => rate,
             Err(e) => {
                 log::error!("Unable to determine the current exchange rate: {:#?}", e);
                 continue;
             }
         };
-        log::info!("New exchange rate polled: {:#?}", rate);
-        let rate = match bound_exchange_rate_change(prev_rate, rate, max_change) {
+        log::info!("New exchange rate polled: {:#?}", new_rate);
+        let bounded_rate = match bound_exchange_rate_change(prev_rate, new_rate, max_change) {
             Ok(rate) => rate,
             Err(e) => {
                 log::error!("Bounding exchange rate failed: {:#?}", e);
@@ -317,31 +314,31 @@ async fn main() -> Result<()> {
         };
 
         let (submission_id, new_seq_number) =
-            send_update(seq_number, &signer, rate, node_client.clone()).await;
-        // new_seq_number should be the sequence number, which was used to send the
-        // update.
+            send_update(seq_number, &signer, bounded_rate, node_client.clone()).await;
+        // new_seq_number is the sequence number, which was used to successfully send
+        // the update.
         seq_number = UpdateSequenceNumber {
             number: new_seq_number.number + 1,
         };
-        prev_rate = rate;
+        prev_rate = bounded_rate;
         log::info!("sent update with submission id: {}", submission_id);
 
-        match tokio::time::timeout(
-            tokio::time::Duration::from_secs(MAX_TIME_CHECK_SUBMISSION),
+        match timeout(
+            Duration::from_secs(MAX_TIME_CHECK_SUBMISSION),
             check_update_status(submission_id, node_client.clone()),
         )
         .await
         {
-            Ok(_) => (),
-            Err(_) => {
-                log::error!(
-                    "Was unable to confirm update with id {} within allocated timeframe",
-                    submission_id
-                );
-                continue;
-            }
+            Ok(_) => log::info!(
+                "Succesfully updated exchange rate to: {:#?}, with id {}",
+                bounded_rate,
+                submission_id
+            ),
+            Err(e) => log::error!(
+                "Was unable to confirm update with id {} within allocated timeframe due to: {}",
+                submission_id,
+                e
+            ),
         };
-
-        log::info!("Succesfully updated exchange rate to: {:#?}, with id {}", rate, submission_id);
     }
 }
