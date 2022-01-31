@@ -22,14 +22,7 @@ async fn handle_metrics() -> Result<String> {
     Ok(response)
 }
 
-pub async fn initialize_prometheus(port: u16) -> Result<()> {
-    REGISTRY
-        .register(Box::new(EXCHANGE_RATE.clone()))
-        .expect("Unable to register exchange rate gauge");
-    REGISTRY
-        .register(Box::new(DROPPED_TIMES.clone()))
-        .expect("Unable to register bounded times counter");
-
+pub async fn serve_prometheus(port: u16) {
     let metrics_route = warp::path("metrics").then(move || async move {
         let res = handle_metrics().await;
         match res {
@@ -41,6 +34,15 @@ pub async fn initialize_prometheus(port: u16) -> Result<()> {
     });
 
     warp::serve(metrics_route).run(([0, 0, 0, 0], port)).await;
+}
+
+pub async fn initialize_prometheus() -> Result<()> {
+    REGISTRY
+        .register(Box::new(EXCHANGE_RATE.clone()))
+        .expect("Unable to register exchange rate gauge");
+    REGISTRY
+        .register(Box::new(DROPPED_TIMES.clone()))
+        .expect("Unable to register bounded times counter");
     Ok(())
 }
 

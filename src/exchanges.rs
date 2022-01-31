@@ -1,14 +1,16 @@
-use crate::helpers::{compute_average, within_allowed_deviation};
-use crate::prometheus;
+use crate::{
+    helpers::{compute_average, within_allowed_deviation},
+    prometheus,
+};
 use anyhow::Result;
-use serde_json::json;
-use std::future::Future;
-use tokio::time::{interval, sleep, Duration};
 use num_rational::BigRational;
+use serde_json::json;
 use std::{
     collections::VecDeque,
+    future::Future,
     sync::{Arc, Mutex},
 };
+use tokio::time::{interval, sleep, Duration};
 
 #[derive(Copy, Clone)]
 pub enum Exchange {
@@ -18,11 +20,14 @@ pub enum Exchange {
 
 const MAX_RETRIES: u64 = 5;
 const PULL_RATE_INTERVAL: u64 = 10; // seconds
-const MAX_DEVIATION_FROM_AVERAGE: u16 = 30; // percentage
 const INITIAL_RETRY_INTERVAL: u64 = 10; // seconds
 const BITFINEX_URL: &str = "https://api-pub.bitfinex.com/v2/calc/fx";
 const MAXIMUM_RATES_SAVED: u64 = 30;
 
+/**
+ * Wrapper for a request function, to continous attempts, with exponential
+ * backoff.
+ */
 async fn request_with_backoff<Fut, T, Input>(
     input: Input,
     request_fn: impl Fn(Input) -> Fut,
@@ -50,6 +55,9 @@ where
     }
 }
 
+/**
+ * Request current exchange rate from bitfinex.
+ */
 async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> {
     // TODO: replace ADA with CCD
     let params = json!({"ccy1": "EUR", "ccy2": "ADA"});
@@ -82,7 +90,9 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
 }
 
 const LOCAL_URL: &str = "http://127.0.0.1:8111/rate";
-
+/**
+ * Get exchange rate from local exchange. (Should only be used for testing)
+ */
 async fn get_local_exchange_rate(client: reqwest::Client) -> Option<f64> {
     let resp = match client.get(LOCAL_URL).send().await {
         Ok(o) => o,
@@ -108,13 +118,21 @@ async fn get_local_exchange_rate(client: reqwest::Client) -> Option<f64> {
     None
 }
 
+/**
+ * Function that continously pulls the exchange rate using request_fn, and
+ * updates the given rates_mutex. Ensures that new rates doesn't deviate
+ * outside allowed range. Ensures that old rates are discarded, when the
+ * queue exceeds max size.
+ */
 async fn exchange_rate_getter<Fut>(
     request_fn: impl Fn(reqwest::Client) -> Fut + Copy,
-    rates_mutex: Arc<Mutex<VecDeque<BigRational>>>,
+    rate_history_mutex: Arc<Mutex<VecDeque<BigRational>>>,
+    max_deviation: u8,
 ) where
     Fut: Future<Output = Option<f64>>, {
     let mut interval = interval(Duration::from_secs(PULL_RATE_INTERVAL));
     let client = reqwest::Client::new();
+    let mut first_time = true;
 
     loop {
         interval.tick().await;
@@ -138,18 +156,26 @@ async fn exchange_rate_getter<Fut>(
             Some(r) => r,
             None => {
                 log::error!("Unable to convert rate to rational: {}", raw_rate);
-                continue
+                continue;
             }
         };
-        let mut rates = rates_mutex.lock().unwrap();
+        let mut rates = rate_history_mutex.lock().unwrap();
+
+        // First time rates are empty, so we just add the exchange rate:
+        if first_time {
+            rates.push_back(rate);
+            first_time = false;
+            continue;
+        }
+
         let current_average = match compute_average(rates.clone()) {
             Some(r) => r,
             None => {
                 log::error!("Unable to compute average to rational");
-                continue
+                continue;
             }
         };
-        if within_allowed_deviation(&current_average, &rate, MAX_DEVIATION_FROM_AVERAGE) {
+        if within_allowed_deviation(&current_average, &rate, max_deviation) {
             rates.push_back(rate);
             if rates.iter().map(|_| 1).sum::<u64>() > MAXIMUM_RATES_SAVED {
                 rates.pop_front();
@@ -168,11 +194,16 @@ async fn exchange_rate_getter<Fut>(
  */
 pub async fn pull_exchange_rate(
     exchange: Exchange,
-    rates: Arc<Mutex<VecDeque<BigRational>>>,
+    rate_history: Arc<Mutex<VecDeque<BigRational>>>,
+    max_deviation: u8,
 ) -> Result<()> {
     match exchange {
-        Exchange::Bitfinex => exchange_rate_getter(request_exchange_rate_bitfinex, rates).await,
-        Exchange::Local => exchange_rate_getter(get_local_exchange_rate, rates).await,
+        Exchange::Bitfinex => {
+            exchange_rate_getter(request_exchange_rate_bitfinex, rate_history, max_deviation).await
+        }
+        Exchange::Local => {
+            exchange_rate_getter(get_local_exchange_rate, rate_history, max_deviation).await
+        }
     };
     Ok(())
 }

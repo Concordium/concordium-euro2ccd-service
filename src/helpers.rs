@@ -1,14 +1,15 @@
-use concordium_rust_sdk::types::ExchangeRate;
-use num_bigint::BigInt;
-use num_rational::BigRational;
-use num_traits::{identities::One, CheckedDiv, CheckedSub, Zero, ToPrimitive, Signed};
-use std::collections::VecDeque;
-use crypto_common::{base16_encode_string, types::KeyPair};
-use concordium_rust_sdk::{
-    types::{BlockSummary, UpdateKeysIndex},
-};
 use anyhow::Result;
+use concordium_rust_sdk::types::{BlockSummary, ExchangeRate, UpdateKeysIndex};
+use crypto_common::{base16_encode_string, types::KeyPair};
+use num_rational::BigRational;
+use num_traits::{identities::One, CheckedDiv, CheckedSub, Signed, ToPrimitive, Zero};
+use std::collections::VecDeque;
 
+/**
+ * Given keypairs and a BlockSummary, find the corresponding index for each
+ * keypair, on the chain. Aborts if any keypair is not registered to sign
+ * CCD/euro rate updates.
+ */
 pub async fn get_signer(
     kps: Vec<KeyPair>,
     summary: &BlockSummary,
@@ -41,6 +42,10 @@ pub async fn get_signer(
     Ok(signer)
 }
 
+/**
+ * Compute the average of the rates stored in the given VeqDeque.
+ * OBS: returns None if the queue is empty.
+ */
 pub fn compute_average(rates: VecDeque<BigRational>) -> Option<BigRational> {
     let len = rates.len();
     rates
@@ -49,15 +54,24 @@ pub fn compute_average(rates: VecDeque<BigRational>) -> Option<BigRational> {
         .checked_div(&BigRational::from_integer(len.into()))
 }
 
+/**
+ * Determine whether the candidate is within the range:
+ * [baseline - max_deviation % , baseline + max_deviation %]
+ * OBS: max_deviation is expected to be given as percentages.
+ */
 pub fn within_allowed_deviation(
     baseline: &BigRational,
     candidate: &BigRational,
-    max_deviation: u16,
+    max_deviation: u8,
 ) -> bool {
-    let max_deviation = BigRational::from_integer(BigInt::from(max_deviation));
-    !((baseline * (BigRational::one() + max_deviation.clone()) < *candidate) || (baseline * (BigRational::one() - max_deviation) > *candidate))
+    let max_deviation = BigRational::new(max_deviation.into(), 100.into());
+    !((baseline * (BigRational::one() + &max_deviation) <= *candidate)
+        || (baseline * (BigRational::one() - max_deviation) >= *candidate))
 }
 
+/**
+ * Return the value of low or high, which is closest to the target.
+ */
 fn get_closest(low: ExchangeRate, high: ExchangeRate, target: BigRational) -> ExchangeRate {
     let big_low = BigRational::new(low.numerator.into(), low.denominator.into());
     let big_high = BigRational::new(high.numerator.into(), high.denominator.into());
@@ -66,16 +80,29 @@ fn get_closest(low: ExchangeRate, high: ExchangeRate, target: BigRational) -> Ex
     match (low_diff, high_diff) {
         (None, Some(_)) => high,
         (Some(_), None) => low,
-        (Some(l), Some(h)) if l > h => high,
-        (Some(_), Some(_))  => low,
+        (Some(l_d), Some(h_d)) if l_d > h_d => high,
+        (Some(_), Some(_)) => low,
         (None, None) => panic!("Could not calculate difference between high or low"),
     }
 }
 
-pub fn convert_big_fraction_to_exchange_rate(target: BigRational, epsilon: BigRational) -> ExchangeRate {
+/**
+ * Convert a BigRational type into an exchange rate.
+ * 1. Check if the BigRational can be translated directly (both bigints are
+ * u64) 2. Traverse the Stern-Brocot tree until we reach a fraction which is
+ * within epsilon of the target. If we unable to represent the next mediant
+ * with u64, then we abort and return the limit closest to the target.
+ */
+pub fn convert_big_fraction_to_exchange_rate(
+    target: BigRational,
+    epsilon: BigRational,
+) -> ExchangeRate {
     // Check if the bigints can fit into u64's.
     if let (Some(p), Some(q)) = (target.numer().to_u64(), target.denom().to_u64()) {
-        return ExchangeRate{ numerator: p, denominator: q}
+        return ExchangeRate {
+            numerator:   p,
+            denominator: q,
+        };
     };
 
     // Otherwise use "Stern-Brocot approximation":
@@ -96,7 +123,7 @@ pub fn convert_big_fraction_to_exchange_rate(target: BigRational, epsilon: BigRa
                 numerator:   n,
                 denominator: d,
             },
-            (_ , _) => return get_closest(low,high,target)
+            (_, _) => return get_closest(low, high, target),
         };
         let big_mediant = BigRational::new(mediant.numerator.into(), mediant.denominator.into());
         if (&big_mediant - &target).abs() <= epsilon {
@@ -124,16 +151,20 @@ mod tests {
         // 24 / 4 = 6
     }
 
-    fn test_convert_u64(num: u64, den: u64)  {
-        let result =
-            convert_big_fraction_to_exchange_rate(BigRational::new(num.into(), den.into()), BigRational::new(1.into(), 1000000000000u64.into()));
+    fn test_convert_u64(num: u64, den: u64) {
+        let result = convert_big_fraction_to_exchange_rate(
+            BigRational::new(num.into(), den.into()),
+            BigRational::new(1.into(), 1000000000000u64.into()),
+        );
         assert_eq!(num, result.numerator);
         assert_eq!(den, result.denominator);
     }
 
-    fn test_convert_u128(num: u128, den: u128, res_num: u64, res_den: u64)  {
-        let result =
-            convert_big_fraction_to_exchange_rate(BigRational::new(num.into(), den.into()), BigRational::new(1.into(), 1000000000000u64.into()));
+    fn test_convert_u128(num: u128, den: u128, res_num: u64, res_den: u64) {
+        let result = convert_big_fraction_to_exchange_rate(
+            BigRational::new(num.into(), den.into()),
+            BigRational::new(1.into(), 1000000000000u64.into()),
+        );
         assert_eq!(res_num, result.numerator);
         assert_eq!(res_den, result.denominator);
     }
@@ -151,15 +182,42 @@ mod tests {
     fn test_convert_4() { test_convert_u64(1, 2); }
 
     #[test]
-    fn test_convert_128() { test_convert_u128(100000000000000000000000000000000000u128, 200000000000000000000000000000000001u128, 1, 2); }
+    fn test_convert_128() {
+        test_convert_u128(
+            100000000000000000000000000000000000u128,
+            200000000000000000000000000000000001u128,
+            1,
+            2,
+        );
+    }
 
     #[test]
-    fn test_convert_128_2() { test_convert_u128(6730672262010705765392518838235123u128, 12417307353238580889556877312u128, 444549438399, 820142); }
+    fn test_convert_128_2() {
+        test_convert_u128(
+            6730672262010705765392518838235123u128,
+            12417307353238580889556877312u128,
+            444549438399,
+            820142,
+        );
+    }
 
     #[test]
-    fn test_convert_128_3() { test_convert_u128(78784731800983935460904371u128, 57712362587357708288u128, 865205507352, 633791); }
+    fn test_convert_128_3() {
+        test_convert_u128(
+            78784731800983935460904371u128,
+            57712362587357708288u128,
+            865205507352,
+            633791,
+        );
+    }
 
     #[test]
-    fn test_convert_128_4() { test_convert_u128(96961673726254741664712289u128, 64926407910777421824u128, 2905555397391, 1945586); }
-
+    fn test_convert_128_4() {
+        test_convert_u128(
+            96961673726254741664712289u128,
+            64926407910777421824u128,
+            2905555397391,
+            1945586,
+        );
+    }
 }
