@@ -1,7 +1,14 @@
-use crate::prometheus::update_rate;
-use anyhow::{anyhow, Result};
+use crate::helpers::{compute_average, within_allowed_deviation};
+use crate::prometheus;
+use anyhow::Result;
 use serde_json::json;
 use std::future::Future;
+use tokio::time::{interval, sleep, Duration};
+use num_rational::BigRational;
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
 #[derive(Copy, Clone)]
 pub enum Exchange {
@@ -10,6 +17,11 @@ pub enum Exchange {
 }
 
 const MAX_RETRIES: u64 = 5;
+const PULL_RATE_INTERVAL: u64 = 10; // seconds
+const MAX_DEVIATION_FROM_AVERAGE: u16 = 30; // percentage
+const INITIAL_RETRY_INTERVAL: u64 = 10; // seconds
+const BITFINEX_URL: &str = "https://api-pub.bitfinex.com/v2/calc/fx";
+const MAXIMUM_RATES_SAVED: u64 = 30;
 
 async fn request_with_backoff<Fut, T, Input>(
     input: Input,
@@ -27,19 +39,16 @@ where
             return Some(i);
         }
 
-        log::warn!("Request not succesful. Waiting for {} seconds until trying again", timeout);
+        log::warn!("Request not successful. Waiting for {} seconds until trying again", timeout);
 
         if retries == 0 {
             return None;
         }
         retries -= 1;
-        tokio::time::sleep(tokio::time::Duration::from_secs(timeout)).await;
+        sleep(Duration::from_secs(timeout)).await;
         timeout *= 2;
     }
 }
-
-const INITIAL_RETRY_INTERVAL: u64 = 10; // seconds
-const BITFINEX_URL: &str = "https://api-pub.bitfinex.com/v2/calc/fx";
 
 async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> {
     // TODO: replace ADA with CCD
@@ -99,41 +108,73 @@ async fn get_local_exchange_rate(client: reqwest::Client) -> Option<f64> {
     None
 }
 
+async fn exchange_rate_getter<Fut>(
+    request_fn: impl Fn(reqwest::Client) -> Fut + Copy,
+    rates_mutex: Arc<Mutex<VecDeque<BigRational>>>,
+) where
+    Fut: Future<Output = Option<f64>>, {
+    let mut interval = interval(Duration::from_secs(PULL_RATE_INTERVAL));
+    let client = reqwest::Client::new();
+
+    loop {
+        interval.tick().await;
+        log::debug!("Polling for exchange rate");
+
+        let raw_rate = match request_with_backoff(
+            client.clone(),
+            request_fn,
+            INITIAL_RETRY_INTERVAL,
+            MAX_RETRIES,
+        )
+        .await
+        {
+            Some(i) => i,
+            None => continue,
+        };
+
+        log::info!("New exchange rate polled: {:#?}", raw_rate);
+        prometheus::update_rate(raw_rate);
+        let rate = match BigRational::from_float(raw_rate) {
+            Some(r) => r,
+            None => {
+                log::error!("Unable to convert rate to rational: {}", raw_rate);
+                continue
+            }
+        };
+        let mut rates = rates_mutex.lock().unwrap();
+        let current_average = match compute_average(rates.clone()) {
+            Some(r) => r,
+            None => {
+                log::error!("Unable to compute average to rational");
+                continue
+            }
+        };
+        if within_allowed_deviation(&current_average, &rate, MAX_DEVIATION_FROM_AVERAGE) {
+            rates.push_back(rate);
+            if rates.iter().map(|_| 1).sum::<u64>() > MAXIMUM_RATES_SAVED {
+                rates.pop_front();
+            }
+        } else {
+            prometheus::increment_dropped_times();
+            log::warn!("Polled rate deviated too much, and has been dropped: {:#?}", rate);
+        }
+        log::debug!("Currently saved rates: {:#?}", *rates);
+        drop(rates);
+    }
+}
+
 /**
  * Get the new MicroCCD/Euro exchange rate
  */
-pub async fn pull_exchange_rate(exchange: Exchange) -> Result<f64> {
-    let client = reqwest::Client::new();
-    let ccd_rate_opt = match exchange {
-        Exchange::Bitfinex => {
-            request_with_backoff(
-                client,
-                request_exchange_rate_bitfinex,
-                INITIAL_RETRY_INTERVAL,
-                MAX_RETRIES,
-            )
-            .await
-        }
-        Exchange::Local => {
-            request_with_backoff(
-                client,
-                get_local_exchange_rate,
-                INITIAL_RETRY_INTERVAL,
-                MAX_RETRIES,
-            )
-            .await
-        }
+pub async fn pull_exchange_rate(
+    exchange: Exchange,
+    rates: Arc<Mutex<VecDeque<BigRational>>>,
+) -> Result<()> {
+    match exchange {
+        Exchange::Bitfinex => exchange_rate_getter(request_exchange_rate_bitfinex, rates).await,
+        Exchange::Local => exchange_rate_getter(get_local_exchange_rate, rates).await,
     };
-
-    let ccd_rate = match ccd_rate_opt {
-        Some(i) => i,
-        None => return Err(anyhow!("Max retries exceeded, unable to pull exchange rate")),
-    };
-    update_rate(ccd_rate);
-    // We multiply with 1/1000000 MicroCCD/CCD
-    let micro_per_ccd = 1000000f64;
-    let micro_ccd_rate = ccd_rate / micro_per_ccd;
-    Ok(micro_ccd_rate)
+    Ok(())
 }
 
 #[cfg(test)]

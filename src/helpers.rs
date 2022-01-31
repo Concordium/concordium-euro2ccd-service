@@ -1,75 +1,112 @@
-use crate::prometheus::increment_bounded_times;
-use anyhow::{anyhow, Result};
 use concordium_rust_sdk::types::ExchangeRate;
-use fraction::Fraction;
+use num_bigint::BigInt;
+use num_rational::BigRational;
+use num_traits::{identities::One, CheckedDiv, CheckedSub, Zero, ToPrimitive, Signed};
+use std::collections::VecDeque;
+use crypto_common::{base16_encode_string, types::KeyPair};
+use concordium_rust_sdk::{
+    types::{BlockSummary, UpdateKeysIndex},
+};
+use anyhow::Result;
 
-pub fn convert_f64_to_exchange_rate(value: f64) -> Result<ExchangeRate> {
-    let frac = Fraction::from(value as f32); // reduce precision, to reduce size of num/denom, to avoid overflow.
-    let numerator = match frac.numer() {
-        Some(e) => e,
-        None => return Err(anyhow!("Conversion failed: unable to get numerator")),
-    };
-    let denominator = match frac.denom() {
-        Some(e) => e,
-        None => return Err(anyhow!("Conversion failed: unable to get denominator")),
-    };
-    Ok(ExchangeRate {
-        numerator:   *numerator,
-        denominator: *denominator,
-    })
+pub async fn get_signer(
+    kps: Vec<KeyPair>,
+    summary: &BlockSummary,
+) -> Result<Vec<(UpdateKeysIndex, KeyPair)>> {
+    let update_keys = &summary.updates.keys.level_2_keys.keys;
+    let update_key_indices = &summary.updates.keys.level_2_keys.micro_gtu_per_euro;
+
+    // find the key indices to sign with
+    let mut signer = Vec::new();
+    for kp in kps {
+        if let Some(i) = update_keys.iter().position(|public| public.public == kp.public.into()) {
+            let idx = UpdateKeysIndex {
+                index: i as u16,
+            };
+            if update_key_indices.authorized_keys.contains(&idx) {
+                signer.push((idx, kp))
+            } else {
+                anyhow::bail!(
+                    "The given key {} is not registered for the CCD/Eur rate update.",
+                    base16_encode_string(&kp.public)
+                );
+            }
+        } else {
+            anyhow::bail!(
+                "The given key {} is not registered for any level 2 updates.",
+                base16_encode_string(&kp.public)
+            );
+        }
+    }
+    Ok(signer)
 }
 
-pub fn bound_exchange_rate_change(
-    current_exchange_rate: ExchangeRate,
-    new_rate: f64,
-    max_change: u8,
-) -> Result<ExchangeRate> {
-    let current =
-        (current_exchange_rate.numerator as f64) / (current_exchange_rate.denominator as f64);
+pub fn compute_average(rates: VecDeque<BigRational>) -> Option<BigRational> {
+    let len = rates.len();
+    rates
+        .into_iter()
+        .fold(BigRational::zero(), |a, b| a + b)
+        .checked_div(&BigRational::from_integer(len.into()))
+}
 
-    if !current.is_finite() || !new_rate.is_finite() {
-        return Err(anyhow!(
-            "Converting exchange rates to float resulted in {}, {}",
-            current,
-            new_rate
-        ));
+pub fn within_allowed_deviation(
+    baseline: &BigRational,
+    candidate: &BigRational,
+    max_deviation: u16,
+) -> bool {
+    let max_deviation = BigRational::from_integer(BigInt::from(max_deviation));
+    !((baseline * (BigRational::one() + max_deviation.clone()) < *candidate) || (baseline * (BigRational::one() - max_deviation) > *candidate))
+}
+
+fn get_closest(low: ExchangeRate, high: ExchangeRate, target: BigRational) -> ExchangeRate {
+    let big_low = BigRational::new(low.numerator.into(), low.denominator.into());
+    let big_high = BigRational::new(high.numerator.into(), high.denominator.into());
+    let low_diff = target.checked_sub(&big_low);
+    let high_diff = big_high.checked_sub(&target);
+    match (low_diff, high_diff) {
+        (None, Some(_)) => high,
+        (Some(_), None) => low,
+        (Some(l), Some(h)) if l > h => high,
+        (Some(_), Some(_))  => low,
+        (None, None) => panic!("Could not calculate difference between high or low"),
     }
+}
 
-    // is the new rate an increase?
-    let increase;
-
-    let diff = if current > new_rate {
-        increase = false;
-        current - new_rate
-    } else {
-        increase = true;
-        new_rate - current
+pub fn convert_big_fraction_to_exchange_rate(target: BigRational, epsilon: BigRational) -> ExchangeRate {
+    // Check if the bigints can fit into u64's.
+    if let (Some(p), Some(q)) = (target.numer().to_u64(), target.denom().to_u64()) {
+        return ExchangeRate{ numerator: p, denominator: q}
     };
 
-    let max_change_concrete = (current / 100f64) * (max_change as f64);
-    log::debug!("Allowed change is {:?} ({} %).", max_change_concrete, max_change);
-
-    if !max_change_concrete.is_finite() {
-        return Err(anyhow!("Calculating maximum change resulted in {}", max_change_concrete));
-    }
-
-    if diff > max_change_concrete {
-        increment_bounded_times();
-        let bounded = if increase {
-            current + max_change_concrete
-        } else {
-            current - max_change_concrete
+    // Otherwise use "Stern-Brocot approximation":
+    let mut mediant: ExchangeRate;
+    let mut low = ExchangeRate {
+        numerator:   0,
+        denominator: 1,
+    };
+    let mut high = ExchangeRate {
+        numerator:   1,
+        denominator: 0,
+    };
+    loop {
+        let mediant_numer = low.numerator.checked_add(high.numerator);
+        let mediant_denom = low.denominator.checked_add(high.denominator);
+        mediant = match (mediant_numer, mediant_denom) {
+            (Some(n), Some(d)) => ExchangeRate {
+                numerator:   n,
+                denominator: d,
+            },
+            (_ , _) => return get_closest(low,high,target)
         };
-
-        if !bounded.is_finite() {
-            return Err(anyhow!("Bounded value resulted in {}", bounded));
+        let big_mediant = BigRational::new(mediant.numerator.into(), mediant.denominator.into());
+        if (&big_mediant - &target).abs() <= epsilon {
+            return mediant;
+        } else if big_mediant > target {
+            high = mediant
+        } else {
+            low = mediant
         }
-
-        log::warn!("New exchange rate was outside allowed range, bounding it to {}", bounded);
-
-        return convert_f64_to_exchange_rate(bounded);
     }
-    convert_f64_to_exchange_rate(new_rate)
 }
 
 #[cfg(test)]
@@ -77,86 +114,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bound_simple_decrease() {
-        let current_rate = ExchangeRate {
-            numerator:   7,
-            denominator: 10,
-        }; // .7
-        let new_rate: f64 = 0.1;
-        let result = ExchangeRate {
-            numerator:   7,
-            denominator: 20,
-        }; // .35
-        let max_change = 50u8; // 50 %
-        match bound_exchange_rate_change(current_rate, new_rate, max_change) {
-            Ok(bounded) => {
-                assert_eq!(bounded.numerator, result.numerator);
-                assert_eq!(bounded.denominator, result.denominator);
-            }
-            Err(e) => panic!("{}", e),
-        }
+    fn test_take_average() {
+        let mut v = VecDeque::new();
+        v.push_back(BigRational::new(1.into(), 1.into()));
+        v.push_back(BigRational::new(9u32.into(), 1u32.into()));
+        v.push_back(BigRational::new(5u32.into(), 1u32.into()));
+        v.push_back(BigRational::new(9u32.into(), 1u32.into()));
+        assert_eq!(compute_average(v), Some(BigRational::new(6u32.into(), 1u32.into())))
+        // 24 / 4 = 6
+    }
+
+    fn test_convert_u64(num: u64, den: u64)  {
+        let result =
+            convert_big_fraction_to_exchange_rate(BigRational::new(num.into(), den.into()), BigRational::new(1.into(), 1000000000000u64.into()));
+        assert_eq!(num, result.numerator);
+        assert_eq!(den, result.denominator);
+    }
+
+    fn test_convert_u128(num: u128, den: u128, res_num: u64, res_den: u64)  {
+        let result =
+            convert_big_fraction_to_exchange_rate(BigRational::new(num.into(), den.into()), BigRational::new(1.into(), 1000000000000u64.into()));
+        assert_eq!(res_num, result.numerator);
+        assert_eq!(res_den, result.denominator);
     }
 
     #[test]
-    fn bound_simple_increase() {
-        let current_rate = ExchangeRate {
-            numerator:   7,
-            denominator: 10,
-        }; // .7
-        let new_rate = 2f64;
-        let result = ExchangeRate {
-            numerator:   21,
-            denominator: 20,
-        }; // 1.05
-        let max_change = 50u8; // 50 %
-        match bound_exchange_rate_change(current_rate, new_rate, max_change) {
-            Ok(bounded) => {
-                assert_eq!(bounded.numerator, result.numerator);
-                assert_eq!(bounded.denominator, result.denominator);
-            }
-            Err(e) => panic!("{}", e),
-        }
-    }
+    fn test_convert_1() { test_convert_u64(1, 101); }
 
     #[test]
-    fn bound_large() {
-        let current_rate = ExchangeRate {
-            numerator:   269873210673,
-            denominator: 250000000000000000,
-        }; // 1.07949284269e-06
-        let new_rate = 1f64;
-        let result = ExchangeRate {
-            numerator:   5451439,
-            denominator: 4999999913984,
-        }; // 1.09028781876e-06
-        let max_change = 1u8; // 1%
-        match bound_exchange_rate_change(current_rate, new_rate, max_change) {
-            Ok(bounded) => {
-                assert_eq!(bounded.numerator, result.numerator);
-                assert_eq!(bounded.denominator, result.denominator);
-            }
-            Err(e) => panic!("{}", e),
-        }
-    }
+    fn test_convert_2() { test_convert_u64(13902531941473u64, 12500000000000000000u64); }
 
     #[test]
-    fn bound_larger() {
-        let current_rate = ExchangeRate {
-            numerator:   13902531941473,
-            denominator: 12500000000000000000,
-        }; // 1.11220255532e-06
-        let new_rate = 3f64;
-        let result = ExchangeRate {
-            numerator:   244201,
-            denominator: 217391300608,
-        }; // 1.12332461932e-06
-        let max_change = 1u8; // 1%
-        match bound_exchange_rate_change(current_rate, new_rate, max_change) {
-            Ok(bounded) => {
-                assert_eq!(bounded.numerator, result.numerator);
-                assert_eq!(bounded.denominator, result.denominator);
-            }
-            Err(e) => panic!("{}", e),
-        }
-    }
+    fn test_convert_3() { test_convert_u64(12500000000000000000u64, 13902531941473u64); }
+
+    #[test]
+    fn test_convert_4() { test_convert_u64(1, 2); }
+
+    #[test]
+    fn test_convert_128() { test_convert_u128(100000000000000000000000000000000000u128, 200000000000000000000000000000000001u128, 1, 2); }
+
+    #[test]
+    fn test_convert_128_2() { test_convert_u128(6730672262010705765392518838235123u128, 12417307353238580889556877312u128, 444549438399, 820142); }
+
+    #[test]
+    fn test_convert_128_3() { test_convert_u128(78784731800983935460904371u128, 57712362587357708288u128, 865205507352, 633791); }
+
+    #[test]
+    fn test_convert_128_4() { test_convert_u128(96961673726254741664712289u128, 64926407910777421824u128, 2905555397391, 1945586); }
+
 }

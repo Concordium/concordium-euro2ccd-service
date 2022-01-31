@@ -8,7 +8,7 @@ use warp::{http::StatusCode, Filter};
 lazy_static! {
     static ref EXCHANGE_RATE: Gauge =
         register_gauge!("exchange_rate", "Last polled exchange rate.").unwrap();
-    static ref BOUNDED_TIMES: Counter =
+    static ref DROPPED_TIMES: Counter =
         register_counter!("rates_bounded", "amount of times exchange rate is being bounded.")
             .unwrap();
     pub static ref REGISTRY: Registry = Registry::new();
@@ -27,7 +27,7 @@ pub async fn initialize_prometheus(port: u16) -> Result<()> {
         .register(Box::new(EXCHANGE_RATE.clone()))
         .expect("Unable to register exchange rate gauge");
     REGISTRY
-        .register(Box::new(BOUNDED_TIMES.clone()))
+        .register(Box::new(DROPPED_TIMES.clone()))
         .expect("Unable to register bounded times counter");
 
     let metrics_route = warp::path("metrics").then(move || async move {
@@ -46,4 +46,4 @@ pub async fn initialize_prometheus(port: u16) -> Result<()> {
 
 pub fn update_rate(rate: f64) { EXCHANGE_RATE.set(rate) }
 
-pub fn increment_bounded_times() { BOUNDED_TIMES.inc() }
+pub fn increment_dropped_times() { DROPPED_TIMES.inc() }

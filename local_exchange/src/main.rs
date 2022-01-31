@@ -27,11 +27,11 @@ async fn main() {
     let matches = app.get_matches();
     let opt = Config::from_clap(&matches);
 
-    let rate: Arc<Mutex<f64>> = Arc::new(Mutex::new(0.0));
+    let rate: Arc<Mutex<f64>> = Arc::new(Mutex::new(1f64));
 
     let serve_rate = warp::get().and(warp::path!("rate")).map(move || {
         let mut rate_unlocked = rate.lock().unwrap();
-        *rate_unlocked = *rate_unlocked + 1000000f64;
+        *rate_unlocked = *rate_unlocked + 0.02f64;
 
         info!("Received request for rate, returning {}", *rate_unlocked);
 
