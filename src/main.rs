@@ -3,6 +3,7 @@ mod helpers;
 mod node;
 mod prometheus;
 mod secretsmanager;
+mod config;
 
 use anyhow::{anyhow, Result};
 use clap::AppSettings;
@@ -19,8 +20,7 @@ use std::{
 };
 use structopt::{clap::ArgGroup, StructOpt};
 use tokio::time::{interval_at, timeout, Duration, Instant};
-
-const MAX_TIME_CHECK_SUBMISSION: u64 = 120; // seconds
+use config::MAX_TIME_CHECK_SUBMISSION;
 
 #[derive(StructOpt)]
 #[structopt(group = ArgGroup::with_name("testing").requires("test").multiple(true))]
@@ -51,11 +51,18 @@ struct App {
     secret_name: String,
     #[structopt(
         long = "update-interval",
-        help = "How often to perform the update. (In seconds)",
+        help = "How often to perform the update, waits period of time before doing first update. (In seconds)",
         env = "EURO2CCD_SERVICE_UPDATE_INTERVAL",
-        default_value = "60"
+        default_value = "1800"
     )]
     update_interval: u64,
+    #[structopt(
+        long = "pull-exchange-interval",
+        help = "How often to pull new exchange rate from exchange. (In seconds)",
+        env = "EURO2CCD_SERVICE_PULL_INTERVAL",
+        default_value = "60"
+    )]
+    pull_interval: u64,
     #[structopt(
         long = "conversion_threshold_denominator",
         help = "Denominator for fraction that determines how far exchange rate can deviate from \
@@ -141,6 +148,7 @@ async fn main() -> Result<()> {
 
     prometheus::initialize_prometheus().await?;
     tokio::spawn(prometheus::serve_prometheus(app.prometheus_port));
+    log::debug!("Started prometheus");
 
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
@@ -156,12 +164,7 @@ async fn main() -> Result<()> {
 
     let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(30)));
 
-    // Add the current exchange rate to the list of rates.
-    let mut initial_rate_big =
-        BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into());
-    initial_rate_big /= &million; // 1/1000000  CCD/microCCD
-                                  // rates_mutex.lock().unwrap().push_back(initial_rate_big);
-    tokio::spawn(pull_exchange_rate(exchange, rates_mutex.clone(), max_deviation));
+    tokio::spawn(pull_exchange_rate(exchange, rates_mutex.clone(), max_deviation, app.pull_interval));
 
     let secret_keys = match app.local_keys {
         Some(path) => get_governance_from_file(path),

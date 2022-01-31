@@ -1,3 +1,4 @@
+use crate::config::{CHECK_SUBMISSION_STATUS_INTERVAL, RETRY_SUBMISSION_INTERVAL, UPDATE_EXPIRY_OFFSET};
 use anyhow::{Context, Result};
 use concordium_rust_sdk::{
     constants::DEFAULT_NETWORK_ID,
@@ -11,10 +12,6 @@ use concordium_rust_sdk::{
 };
 use crypto_common::types::{KeyPair, TransactionTime};
 use tokio::time::{interval, Duration};
-
-const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 5; // seconds
-const RETRY_SUBMISSION_INTERVAL: u64 = 10; // seconds
-const UPDATE_EXPIRY_OFFSET: u64 = 100; // seconds
 
 pub async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSummary> {
     let consensus_status = node_client

@@ -1,6 +1,7 @@
 use crate::{
     helpers::{compute_average, within_allowed_deviation},
     prometheus,
+    config::{LOCAL_URL, MAXIMUM_RATES_SAVED, BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAX_RETRIES}
 };
 use anyhow::Result;
 use num_rational::BigRational;
@@ -17,12 +18,6 @@ pub enum Exchange {
     Bitfinex,
     Local,
 }
-
-const MAX_RETRIES: u64 = 5;
-const PULL_RATE_INTERVAL: u64 = 10; // seconds
-const INITIAL_RETRY_INTERVAL: u64 = 10; // seconds
-const BITFINEX_URL: &str = "https://api-pub.bitfinex.com/v2/calc/fx";
-const MAXIMUM_RATES_SAVED: u64 = 30;
 
 /**
  * Wrapper for a request function, to continous attempts, with exponential
@@ -89,7 +84,6 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
     None
 }
 
-const LOCAL_URL: &str = "http://127.0.0.1:8111/rate";
 /**
  * Get exchange rate from local exchange. (Should only be used for testing)
  */
@@ -128,9 +122,10 @@ async fn exchange_rate_getter<Fut>(
     request_fn: impl Fn(reqwest::Client) -> Fut + Copy,
     rate_history_mutex: Arc<Mutex<VecDeque<BigRational>>>,
     max_deviation: u8,
+    pull_interval: u64,
 ) where
     Fut: Future<Output = Option<f64>>, {
-    let mut interval = interval(Duration::from_secs(PULL_RATE_INTERVAL));
+    let mut interval = interval(Duration::from_secs(pull_interval));
     let client = reqwest::Client::new();
     let mut first_time = true;
 
@@ -196,13 +191,14 @@ pub async fn pull_exchange_rate(
     exchange: Exchange,
     rate_history: Arc<Mutex<VecDeque<BigRational>>>,
     max_deviation: u8,
+    pull_interval: u64,
 ) -> Result<()> {
     match exchange {
         Exchange::Bitfinex => {
-            exchange_rate_getter(request_exchange_rate_bitfinex, rate_history, max_deviation).await
+            exchange_rate_getter(request_exchange_rate_bitfinex, rate_history, max_deviation, pull_interval).await
         }
         Exchange::Local => {
-            exchange_rate_getter(get_local_exchange_rate, rate_history, max_deviation).await
+            exchange_rate_getter(get_local_exchange_rate, rate_history, max_deviation, pull_interval).await
         }
     };
     Ok(())
