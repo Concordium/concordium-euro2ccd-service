@@ -1,4 +1,6 @@
-use crate::config::{CHECK_SUBMISSION_STATUS_INTERVAL, RETRY_SUBMISSION_INTERVAL, UPDATE_EXPIRY_OFFSET};
+use crate::config::{
+    CHECK_SUBMISSION_STATUS_INTERVAL, RETRY_SUBMISSION_INTERVAL, UPDATE_EXPIRY_OFFSET,
+};
 use anyhow::{Context, Result};
 use concordium_rust_sdk::{
     constants::DEFAULT_NETWORK_ID,

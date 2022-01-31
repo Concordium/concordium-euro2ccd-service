@@ -1,13 +1,14 @@
+mod config;
 mod exchanges;
 mod helpers;
 mod node;
 mod prometheus;
 mod secretsmanager;
-mod config;
 
 use anyhow::{anyhow, Result};
 use clap::AppSettings;
 use concordium_rust_sdk::{endpoints, types::UpdateSequenceNumber};
+use config::MAX_TIME_CHECK_SUBMISSION;
 use exchanges::{pull_exchange_rate, Exchange};
 use helpers::{compute_average, convert_big_fraction_to_exchange_rate, get_signer};
 use node::{check_update_status, get_block_summary, send_update};
@@ -20,7 +21,6 @@ use std::{
 };
 use structopt::{clap::ArgGroup, StructOpt};
 use tokio::time::{interval_at, timeout, Duration, Instant};
-use config::MAX_TIME_CHECK_SUBMISSION;
 
 #[derive(StructOpt)]
 #[structopt(group = ArgGroup::with_name("testing").requires("test").multiple(true))]
@@ -51,7 +51,8 @@ struct App {
     secret_name: String,
     #[structopt(
         long = "update-interval",
-        help = "How often to perform the update, waits period of time before doing first update. (In seconds)",
+        help = "How often to perform the update, waits period of time before doing first update. \
+                (In seconds)",
         env = "EURO2CCD_SERVICE_UPDATE_INTERVAL",
         default_value = "1800"
     )]
@@ -164,7 +165,12 @@ async fn main() -> Result<()> {
 
     let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(30)));
 
-    tokio::spawn(pull_exchange_rate(exchange, rates_mutex.clone(), max_deviation, app.pull_interval));
+    tokio::spawn(pull_exchange_rate(
+        exchange,
+        rates_mutex.clone(),
+        max_deviation,
+        app.pull_interval,
+    ));
 
     let secret_keys = match app.local_keys {
         Some(path) => get_governance_from_file(path),

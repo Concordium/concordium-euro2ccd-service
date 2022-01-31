@@ -1,7 +1,7 @@
 use crate::{
+    config::{BITFINEX_URL, INITIAL_RETRY_INTERVAL, LOCAL_URL, MAXIMUM_RATES_SAVED, MAX_RETRIES},
     helpers::{compute_average, within_allowed_deviation},
     prometheus,
-    config::{LOCAL_URL, MAXIMUM_RATES_SAVED, BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAX_RETRIES}
 };
 use anyhow::Result;
 use num_rational::BigRational;
@@ -195,10 +195,22 @@ pub async fn pull_exchange_rate(
 ) -> Result<()> {
     match exchange {
         Exchange::Bitfinex => {
-            exchange_rate_getter(request_exchange_rate_bitfinex, rate_history, max_deviation, pull_interval).await
+            exchange_rate_getter(
+                request_exchange_rate_bitfinex,
+                rate_history,
+                max_deviation,
+                pull_interval,
+            )
+            .await
         }
         Exchange::Local => {
-            exchange_rate_getter(get_local_exchange_rate, rate_history, max_deviation, pull_interval).await
+            exchange_rate_getter(
+                get_local_exchange_rate,
+                rate_history,
+                max_deviation,
+                pull_interval,
+            )
+            .await
         }
     };
     Ok(())
