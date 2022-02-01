@@ -4,6 +4,7 @@ mod helpers;
 mod node;
 mod prometheus;
 mod secretsmanager;
+mod certificate_resolver;
 
 use anyhow::{anyhow, Result};
 use clap::AppSettings;

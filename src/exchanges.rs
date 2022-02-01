@@ -1,9 +1,10 @@
 use crate::{
-    config::{BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAXIMUM_RATES_SAVED, MAX_RETRIES},
+    config::{BITFINEX_URL, BITFINEX_CERTIFICATE_LOCATION, INITIAL_RETRY_INTERVAL, MAXIMUM_RATES_SAVED, MAX_RETRIES},
     helpers::{compute_average, within_allowed_deviation},
+    certificate_resolver::get_client_with_specific_certificate,
     prometheus,
 };
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use num_rational::BigRational;
 use serde_json::json;
 use std::{
@@ -123,10 +124,10 @@ async fn exchange_rate_getter<Fut>(
     rate_history_mutex: Arc<Mutex<VecDeque<BigRational>>>,
     max_deviation: u8,
     pull_interval: u64,
+    client: reqwest::Client,
 ) where
     Fut: Future<Output = Option<f64>>, {
     let mut interval = interval(Duration::from_secs(pull_interval));
-    let client = reqwest::Client::new();
     let mut first_time = true;
 
     loop {
@@ -184,6 +185,13 @@ async fn exchange_rate_getter<Fut>(
     }
 }
 
+fn build_client(exchange: Exchange) -> Result<reqwest::Client> {
+    match exchange {
+        Exchange::Bitfinex => get_client_with_specific_certificate(BITFINEX_CERTIFICATE_LOCATION),
+        Exchange::Test(_) => Ok(reqwest::Client::new()),
+    }
+}
+
 /**
  * Get the new MicroCCD/Euro exchange rate
  */
@@ -193,6 +201,14 @@ pub async fn pull_exchange_rate(
     max_deviation: u8,
     pull_interval: u64,
 ) -> Result<()> {
+    let client = match build_client(exchange.clone()) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Error while building client: {:#?}", e);
+            return Ok(());
+        }
+    };
+
     match exchange {
         Exchange::Bitfinex => {
             exchange_rate_getter(
@@ -200,6 +216,7 @@ pub async fn pull_exchange_rate(
                 rate_history,
                 max_deviation,
                 pull_interval,
+                client
             )
             .await
         }
@@ -209,6 +226,7 @@ pub async fn pull_exchange_rate(
                 rate_history,
                 max_deviation,
                 pull_interval,
+                client
             )
             .await
         }

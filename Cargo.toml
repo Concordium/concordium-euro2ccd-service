@@ -13,7 +13,7 @@ env_logger = "0.9.0"
 log = "0.4"
 tokio = {version = "1.8", features = ["full"]}
 openssl = {version = "0.10", features = ["vendored"]}
-reqwest = {version = "0.11.9", features = ["json"]}
+reqwest = {version = "0.11.9", features = ["json", "rustls-tls-native-roots"]}
 serde_json = "1.0.60"
 anyhow = "1"
 num-rational = "0.4"
@@ -21,7 +21,9 @@ num-traits = "0.2.14"
 num-bigint = "0.4"
 num-integer = "0.1.44"
 chrono = {version = "0.4", features = ["serde"] }
-       
+rustls = "0.20.2"
+webpki-roots = "0.22.2"
+ 
 crypto_common = { version = "0.1.0", path = "./deps/concordium-rust-sdk/concordium-base/rust-src/crypto_common", features = ["encryption"] }
 
 aws-config = "0.5.2"

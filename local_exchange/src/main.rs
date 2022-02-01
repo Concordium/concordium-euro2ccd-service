@@ -29,7 +29,7 @@ async fn main() {
 
     let rate: Arc<Mutex<f64>> = Arc::new(Mutex::new(1f64));
 
-    let serve_rate = warp::get().and(warp::path!("rate")).map(move || {
+    let serve_rate = warp::post().and(warp::path!("rate")).map(move || {
         let mut rate_unlocked = rate.lock().unwrap();
         *rate_unlocked = *rate_unlocked + 0.02f64;
 

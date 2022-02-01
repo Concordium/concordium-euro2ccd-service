@@ -4,6 +4,7 @@ pub const INITIAL_RETRY_INTERVAL: u64 = 10; // seconds, when attempting to reach
                                             // unsuccessful try)
 pub const MAXIMUM_RATES_SAVED: u64 = 30; // In rate_history.
 pub const BITFINEX_URL: &str = "https://api-pub.bitfinex.com/v2/calc/fx";
+pub const BITFINEX_CERTIFICATE_LOCATION: &str = "./resources/bitfinex-com.der";
 
 pub const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 5; // seconds
 pub const RETRY_SUBMISSION_INTERVAL: u64 = 10; // seconds
