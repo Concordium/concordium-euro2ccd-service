@@ -27,7 +27,7 @@ use tokio::time::{interval_at, timeout, Duration, Instant};
 struct App {
     #[structopt(
         long = "node",
-        help = "GRPC interface of the node(s).",
+        help = "location of the GRPC interface of the node.",
         default_value = "http://localhost:10000",
         use_delimiter = true,
         env = "EURO2CCD_SERVICE_NODE"
@@ -35,7 +35,7 @@ struct App {
     endpoint: endpoints::Endpoint,
     #[structopt(
         long = "rpc-token",
-        help = "GRPC interface access token for accessing all the nodes.",
+        help = "GRPC interface access token for accessing the node.",
         default_value = "rpcadmin",
         env = "EURO2CCD_SERVICE_RPC_TOKEN"
     )]
@@ -51,8 +51,7 @@ struct App {
     secret_name: String,
     #[structopt(
         long = "update-interval",
-        help = "How often to perform the update, waits period of time before doing first update. \
-                (In seconds)",
+        help = "How often to update the exchange rate. (In seconds)",
         env = "EURO2CCD_SERVICE_UPDATE_INTERVAL",
         default_value = "1800"
     )]
@@ -67,8 +66,8 @@ struct App {
     #[structopt(
         long = "conversion_threshold_denominator",
         help = "Denominator for fraction that determines how far exchange rate can deviate from \
-                actual (bigint) value.",
-        env = "EURO2CCD_SERVICE_CONVERSION_TRESHOLD",
+                actual (bigint) value. (the numerator is 1)",
+        env = "EURO2CCD_SERVICE_CONVERSION_TRESHOLD_DENOMINATOR",
         default_value = "1000000000000"
     )]
     conversion_threshold_denominator: u64,
@@ -83,7 +82,7 @@ struct App {
         long = "max-deviation",
         default_value = "30",
         help = "Percentage max change allowed when adding new readings to the history of exchange \
-                rates. i.e. 1-99",
+                rates. (1-99)",
         env = "EURO2CCD_SERVICE_MAX_DEVIATION"
     )]
     max_deviation: u8,
@@ -102,13 +101,13 @@ struct App {
     )]
     test: bool,
     #[structopt(
-        long = "local-exchange",
-        help = "If set to true, pulls exchange rate from localhost:8111 (see local_exchange \
+        long = "test-exchange",
+        help = "If set to true, pulls exchange rate from the given location (see local_exchange \
                 subproject)  (FOR TESTING)",
-        env = "EURO2CCD_SERVICE_LOCAL_EXCHANGE",
+        env = "EURO2CCD_SERVICE_TEST_EXCHANGE",
         group = "testing"
     )]
-    local_exchange: bool,
+    test_exchange: Option<String>,
     #[structopt(
         long = "local-keys",
         help = "If given, the service uses local governance keys in specified file instead of \
@@ -154,11 +153,11 @@ async fn main() -> Result<()> {
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
     let initial_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
-    log::info!("Loaded initial block summary, current exchange rate: {:#?}", initial_rate);
+    log::debug!("Loaded initial block summary, current exchange rate: {:#?}", initial_rate);
 
-    let exchange = match app.local_exchange {
-        true => Exchange::Local,
-        false => Exchange::Bitfinex,
+    let exchange = match app.test_exchange {
+        Some(url) => Exchange::Test(url),
+        None => Exchange::Bitfinex,
     };
 
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
@@ -177,8 +176,8 @@ async fn main() -> Result<()> {
         None => get_governance_from_aws(&app.secret_name).await,
     }?;
 
-    let signer = get_signer(secret_keys, &summary).await?;
-    log::info!("keys loaded");
+    let signer = get_signer(secret_keys, &summary)?;
+    log::debug!("keys loaded");
 
     let update_interval_duration = Duration::from_secs(app.update_interval);
     let mut interval =
@@ -204,13 +203,13 @@ async fn main() -> Result<()> {
             }
         };
         drop(rates);
-        log::debug!("computed average: {:#?}", rate);
+        log::debug!("Computed average: {:#?}", rate);
 
-        // Convert the rate into an exchange_rate (i.e. convert the bigints to u64's).
+        // Convert the rate into an ExchangeRate (i.e. convert the bigints to u64's).
         // Also multiplies with 1000000 microCCD/CCD
         let new_rate =
             convert_big_fraction_to_exchange_rate(rate * &million, conversion_threshold.clone());
-        log::debug!("converted new_rate: {:#?}", new_rate);
+        log::debug!("Converted new_rate: {:#?}", new_rate);
 
         let (submission_id, new_seq_number) =
             send_update(seq_number, &signer, new_rate, node_client.clone()).await;
@@ -219,7 +218,7 @@ async fn main() -> Result<()> {
         seq_number = UpdateSequenceNumber {
             number: new_seq_number.number + 1,
         };
-        log::info!("sent update with submission id: {}", submission_id);
+        log::info!("Sent update with submission id: {}", submission_id);
 
         match timeout(
             Duration::from_secs(MAX_TIME_CHECK_SUBMISSION),

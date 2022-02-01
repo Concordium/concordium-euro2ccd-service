@@ -9,7 +9,7 @@ lazy_static! {
     static ref EXCHANGE_RATE: Gauge =
         register_gauge!("exchange_rate", "Last polled exchange rate.").unwrap();
     static ref DROPPED_TIMES: Counter =
-        register_counter!("rates_bounded", "amount of times exchange rate is being bounded.")
+        register_counter!("rates_bounded", "amount of times exchange rate has been bounded.")
             .unwrap();
     pub static ref REGISTRY: Registry = Registry::new();
 }

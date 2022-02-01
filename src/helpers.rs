@@ -10,7 +10,7 @@ use std::collections::VecDeque;
  * keypair, on the chain. Aborts if any keypair is not registered to sign
  * CCD/euro rate updates.
  */
-pub async fn get_signer(
+pub fn get_signer(
     kps: Vec<KeyPair>,
     summary: &BlockSummary,
 ) -> Result<Vec<(UpdateKeysIndex, KeyPair)>> {
@@ -44,7 +44,7 @@ pub async fn get_signer(
 
 /**
  * Compute the average of the rates stored in the given VeqDeque.
- * OBS: returns None if the queue is empty.
+ * Returns None if the queue is empty.
  */
 pub fn compute_average(rates: VecDeque<BigRational>) -> Option<BigRational> {
     let len = rates.len();
@@ -57,7 +57,7 @@ pub fn compute_average(rates: VecDeque<BigRational>) -> Option<BigRational> {
 /**
  * Determine whether the candidate is within the range:
  * [baseline - max_deviation % , baseline + max_deviation %]
- * OBS: max_deviation is expected to be given as percentages.
+ * N.B: max_deviation is expected to be given as percentages.
  */
 pub fn within_allowed_deviation(
     baseline: &BigRational,
@@ -82,14 +82,15 @@ fn get_closest(low: ExchangeRate, high: ExchangeRate, target: BigRational) -> Ex
         (Some(_), None) => low,
         (Some(l_d), Some(h_d)) if l_d > h_d => high,
         (Some(_), Some(_)) => low,
-        (None, None) => panic!("Could not calculate difference between high or low"),
+        (None, None) => panic!("Could not calculate difference for high nor low"),
     }
 }
 
 /**
  * Convert a BigRational type into an exchange rate.
  * 1. Check if the BigRational can be translated directly (both bigints are
- * u64) 2. Traverse the Stern-Brocot tree until we reach a fraction which is
+ * u64)
+ * 2. Traverse the Stern-Brocot tree until we reach a fraction which is
  * within epsilon of the target. If we unable to represent the next mediant
  * with u64, then we abort and return the limit closest to the target.
  */

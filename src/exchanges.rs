@@ -1,5 +1,5 @@
 use crate::{
-    config::{BITFINEX_URL, INITIAL_RETRY_INTERVAL, LOCAL_URL, MAXIMUM_RATES_SAVED, MAX_RETRIES},
+    config::{BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAXIMUM_RATES_SAVED, MAX_RETRIES},
     helpers::{compute_average, within_allowed_deviation},
     prometheus,
 };
@@ -13,10 +13,10 @@ use std::{
 };
 use tokio::time::{interval, sleep, Duration};
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub enum Exchange {
     Bitfinex,
-    Local,
+    Test(String),
 }
 
 /**
@@ -85,13 +85,13 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
 }
 
 /**
- * Get exchange rate from local exchange. (Should only be used for testing)
+ * Get exchange rate from test exchange. (Should only be used for testing)
  */
-async fn get_local_exchange_rate(client: reqwest::Client) -> Option<f64> {
-    let resp = match client.get(LOCAL_URL).send().await {
+async fn request_exchange_rate_test(client: reqwest::Client, url: String) -> Option<f64> {
+    let resp = match client.get(url).send().await {
         Ok(o) => o,
         Err(e) => {
-            log::warn!("Unable to retrieve from local: {:#?}", e);
+            log::warn!("Unable to retrieve from test exchange: {:#?}", e);
             return None;
         }
     };
@@ -99,15 +99,15 @@ async fn get_local_exchange_rate(client: reqwest::Client) -> Option<f64> {
         match resp.json::<Vec<f64>>().await {
             Ok(v) => {
                 let raw_rate = v[0];
-                log::debug!("Raw exchange rate CCD/EUR polled from local: {:#?}", raw_rate);
+                log::debug!("Raw exchange rate CCD/EUR polled from test exchange: {:#?}", raw_rate);
                 return Some(raw_rate);
             }
             Err(_) => {
-                log::error!("Unable to parse response from local as JSON")
+                log::error!("Unable to parse response from test exchange as JSON")
             }
         };
     } else {
-        log::error!("Error response from local: {:?}", resp.status());
+        log::error!("Error response from test exchange: {:?}", resp.status());
     };
     None
 }
@@ -119,7 +119,7 @@ async fn get_local_exchange_rate(client: reqwest::Client) -> Option<f64> {
  * queue exceeds max size.
  */
 async fn exchange_rate_getter<Fut>(
-    request_fn: impl Fn(reqwest::Client) -> Fut + Copy,
+    request_fn: impl Fn(reqwest::Client) -> Fut + Clone,
     rate_history_mutex: Arc<Mutex<VecDeque<BigRational>>>,
     max_deviation: u8,
     pull_interval: u64,
@@ -135,7 +135,7 @@ async fn exchange_rate_getter<Fut>(
 
         let raw_rate = match request_with_backoff(
             client.clone(),
-            request_fn,
+            request_fn.clone(),
             INITIAL_RETRY_INTERVAL,
             MAX_RETRIES,
         )
@@ -203,9 +203,9 @@ pub async fn pull_exchange_rate(
             )
             .await
         }
-        Exchange::Local => {
+        Exchange::Test(url) => {
             exchange_rate_getter(
-                get_local_exchange_rate,
+                |client|  request_exchange_rate_test(client, url.clone()),
                 rate_history,
                 max_deviation,
                 pull_interval,
