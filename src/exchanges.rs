@@ -1,10 +1,13 @@
 use crate::{
-    config::{BITFINEX_URL, BITFINEX_CERTIFICATE_LOCATION, INITIAL_RETRY_INTERVAL, MAXIMUM_RATES_SAVED, MAX_RETRIES},
-    helpers::{compute_average, within_allowed_deviation},
     certificate_resolver::get_client_with_specific_certificate,
+    config::{
+        BITFINEX_CERTIFICATE_LOCATION, BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAXIMUM_RATES_SAVED,
+        MAX_RETRIES,
+    },
+    helpers::{compute_average, within_allowed_deviation},
     prometheus,
 };
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use num_rational::BigRational;
 use serde_json::json;
 use std::{
@@ -216,17 +219,17 @@ pub async fn pull_exchange_rate(
                 rate_history,
                 max_deviation,
                 pull_interval,
-                client
+                client,
             )
             .await
         }
         Exchange::Test(url) => {
             exchange_rate_getter(
-                |client|  request_exchange_rate_test(client, url.clone()),
+                |client| request_exchange_rate_test(client, url.clone()),
                 rate_history,
                 max_deviation,
                 pull_interval,
-                client
+                client,
             )
             .await
         }
