@@ -30,7 +30,6 @@ struct App {
         long = "node",
         help = "location of the GRPC interface of the node.",
         default_value = "http://localhost:10000",
-        use_delimiter = true,
         env = "EURO2CCD_SERVICE_NODE"
     )]
     endpoint: endpoints::Endpoint,
@@ -42,9 +41,9 @@ struct App {
     )]
     token: String,
     #[structopt(
-        long = "secret-name",
-        help = "Secret name on AWS.",
-        env = "EURO2CCD_SERVICE_SECRET_NAME",
+        long = "secret-names",
+        help = "Secret names on AWS to get govenance keys from.",
+        env = "EURO2CCD_SERVICE_SECRET_NAMES",
         parse(from_str),
         use_delimiter = true,
         default_value = "secret-dummy",
