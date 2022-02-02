@@ -45,11 +45,13 @@ struct App {
         long = "secret-name",
         help = "Secret name on AWS.",
         env = "EURO2CCD_SERVICE_SECRET_NAME",
+        parse(from_str),
+        use_delimiter = true,
         default_value = "secret-dummy",
         required_unless = "local-keys",
         conflicts_with = "local-keys"
     )]
-    secret_name: String,
+    secret_names: Vec<String>,
     #[structopt(
         long = "update-interval",
         help = "How often to update the exchange rate. (In seconds)",
@@ -174,7 +176,7 @@ async fn main() -> Result<()> {
 
     let secret_keys = match app.local_keys {
         Some(path) => get_governance_from_file(path),
-        None => get_governance_from_aws(&app.secret_name).await,
+        None => get_governance_from_aws(app.secret_names).await,
     }?;
 
     let signer = get_signer(secret_keys, &summary)?;
