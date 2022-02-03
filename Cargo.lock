@@ -187,29 +187,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aws-sdk-dynamodb"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7429eb010d01c3f18a648257574a9a16086f73ce578e42a3b42aa1742325583e"
-dependencies = [
- "aws-endpoint",
- "aws-http",
- "aws-sig-auth",
- "aws-smithy-async",
- "aws-smithy-client",
- "aws-smithy-http",
- "aws-smithy-http-tower",
- "aws-smithy-json",
- "aws-smithy-types",
- "aws-types",
- "bytes",
- "fastrand",
- "http",
- "tokio-stream",
- "tower",
-]
-
-[[package]]
 name = "aws-sdk-secretsmanager"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -662,6 +639,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "concordium-eur2ccd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aws-config",
+ "aws-sdk-secretsmanager",
+ "chrono",
+ "clap",
+ "concordium-rust-sdk",
+ "crypto_common",
+ "env_logger",
+ "futures",
+ "lazy_static",
+ "log",
+ "num-bigint 0.4.3",
+ "num-integer",
+ "num-rational",
+ "num-traits",
+ "openssl",
+ "prometheus",
+ "reqwest",
+ "rustls 0.20.2",
+ "serde_json",
+ "structopt",
+ "tokio",
+ "warp",
+ "webpki-roots",
+]
+
+[[package]]
 name = "concordium-rust-sdk"
 version = "0.1.0"
 dependencies = [
@@ -1045,37 +1052,6 @@ dependencies = [
  "log",
  "regex",
  "termcolor",
-]
-
-[[package]]
-name = "euro2ccd-service"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "aws-config",
- "aws-sdk-dynamodb",
- "aws-sdk-secretsmanager",
- "chrono",
- "clap",
- "concordium-rust-sdk",
- "crypto_common",
- "env_logger",
- "futures",
- "lazy_static",
- "log",
- "num-bigint 0.4.3",
- "num-integer",
- "num-rational",
- "num-traits",
- "openssl",
- "prometheus",
- "reqwest",
- "rustls 0.20.2",
- "serde_json",
- "structopt",
- "tokio",
- "warp",
- "webpki-roots",
 ]
 
 [[package]]

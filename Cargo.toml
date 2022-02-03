@@ -1,5 +1,5 @@
 [package]
-name = "euro2ccd-service"
+name = "concordium-eur2ccd"
 version = "0.1.0"
 edition = "2018"
 
@@ -27,7 +27,6 @@ webpki-roots = "0.22.2"
 crypto_common = { version = "0.1.0", path = "./deps/concordium-rust-sdk/concordium-base/rust-src/crypto_common", features = ["encryption"] }
 
 aws-config = "0.5.2"
-aws-sdk-dynamodb = "0.5.2"
 aws-sdk-secretsmanager = "0.5.2"
 
 lazy_static = "1.4.0"
