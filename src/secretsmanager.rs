@@ -19,7 +19,9 @@ pub async fn get_governance_from_aws(secret_names: Vec<String>) -> Result<Vec<Ke
             Some(s) => s,
             None => return Err(anyhow!("Secret string was not present")),
         };
-        match serde_json::from_str::<Vec<KeyPair>>(raw_secret).context("Could not read keys from secret.") {
+        match serde_json::from_str::<Vec<KeyPair>>(raw_secret)
+            .context("Could not read keys from secret.")
+        {
             Ok(mut kp) => kps.append(&mut kp),
             Err(e) => return Err(e),
         };
