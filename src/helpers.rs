@@ -1,4 +1,3 @@
-use anyhow::Result;
 use concordium_rust_sdk::types::{BlockSummary, ExchangeRate, UpdateKeysIndex};
 use crypto_common::{base16_encode_string, types::KeyPair};
 use num_rational::BigRational;
@@ -13,7 +12,7 @@ use std::collections::VecDeque;
 pub fn get_signer(
     kps: Vec<KeyPair>,
     summary: &BlockSummary,
-) -> Result<Vec<(UpdateKeysIndex, KeyPair)>> {
+) -> anyhow::Result<Vec<(UpdateKeysIndex, KeyPair)>> {
     let update_keys = &summary.updates.keys.level_2_keys.keys;
     let update_key_indices = &summary.updates.keys.level_2_keys.micro_gtu_per_euro;
 
@@ -46,10 +45,10 @@ pub fn get_signer(
  * Compute the average of the rates stored in the given VeqDeque.
  * Returns None if the queue is empty.
  */
-pub fn compute_average(rates: VecDeque<BigRational>) -> Option<BigRational> {
+pub fn compute_average(rates: &VecDeque<BigRational>) -> Option<BigRational> {
     let len = rates.len();
     rates
-        .into_iter()
+        .iter()
         .fold(BigRational::zero(), |a, b| a + b)
         .checked_div(&BigRational::from_integer(len.into()))
 }
@@ -148,7 +147,7 @@ mod tests {
         v.push_back(BigRational::new(9u32.into(), 1u32.into()));
         v.push_back(BigRational::new(5u32.into(), 1u32.into()));
         v.push_back(BigRational::new(9u32.into(), 1u32.into()));
-        assert_eq!(compute_average(v), Some(BigRational::new(6u32.into(), 1u32.into())))
+        assert_eq!(compute_average(&v), Some(BigRational::new(6u32.into(), 1u32.into())))
         // 24 / 4 = 6
     }
 

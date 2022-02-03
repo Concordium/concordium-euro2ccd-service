@@ -67,15 +67,15 @@ LockPersonality=yes
 RestrictRealtime=yes
 MemoryDenyWriteExecute=yes
 
-Environment=EURO2CCD_SERVICE_NODE=http://127.0.0.1:10000
-Environment=EURO2CCD_SERVICE_RPC_TOKEN=rpcadmin
-Environment=EURO2CCD_SERVICE_UPDATE_INTERVAL=1800
-Environment=EURO2CCD_SERVICE_PULL_INTERVAL=60
-Environment=EURO2CCD_SERVICE_MAX_DEVIATION=30
-Environment=EURO2CCD_SERVICE_PROMETHEUS_PORT=8112
-Environment=EURO2CCD_SERVICE_LOG_LEVEL=debug
-Environment=EURO2CCD_SERVICE_SECRET_NAMES=secret1-dummy,secret2-dummy
-Environment=EURO2CCD_SERVICE_BITFINEX_CERTIFICATE=/usr/share/concordium-eur2ccd/bitfinex-com.der
+Environment=EUR2CCD_SERVICE_NODE=http://127.0.0.1:10000
+Environment=EUR2CCD_SERVICE_RPC_TOKEN=rpcadmin
+Environment=EUR2CCD_SERVICE_UPDATE_INTERVAL=1800
+Environment=EUR2CCD_SERVICE_PULL_INTERVAL=60
+Environment=EUR2CCD_SERVICE_MAX_DEVIATION=30
+Environment=EUR2CCD_SERVICE_PROMETHEUS_PORT=8112
+Environment=EUR2CCD_SERVICE_LOG_LEVEL=debug
+Environment=EUR2CCD_SERVICE_SECRET_NAMES=secret1-dummy,secret2-dummy
+Environment=EUR2CCD_SERVICE_BITFINEX_CERTIFICATE=/usr/share/concordium-eur2ccd/bitfinex-com.der
 
 [Install]
 # start the service when reaching multi-user target

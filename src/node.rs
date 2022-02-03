@@ -1,5 +1,6 @@
-use crate::config::{
-    CHECK_SUBMISSION_STATUS_INTERVAL, RETRY_SUBMISSION_INTERVAL, UPDATE_EXPIRY_OFFSET,
+use crate::{
+    config::{CHECK_SUBMISSION_STATUS_INTERVAL, RETRY_SUBMISSION_INTERVAL, UPDATE_EXPIRY_OFFSET},
+    prometheus::Stats,
 };
 use anyhow::{Context, Result};
 use concordium_rust_sdk::{
@@ -42,6 +43,7 @@ fn construct_block_item(
 }
 
 pub async fn send_update(
+    stats: &Stats,
     mut seq_number: UpdateSequenceNumber,
     signer: &[(UpdateKeysIndex, KeyPair)],
     exchange_rate: ExchangeRate,
@@ -50,6 +52,7 @@ pub async fn send_update(
     let mut get_new_seq_number = false;
 
     let mut interval = interval(Duration::from_secs(RETRY_SUBMISSION_INTERVAL));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         interval.tick().await;
 
@@ -62,19 +65,31 @@ pub async fn send_update(
                 }
             };
             seq_number = new_summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
-            get_new_seq_number = false;
         }
-
+        // Construct the block item again. This sets the expiry from now so it is
+        // necessary to reconstruct on each attempt.
         let block_item = construct_block_item(seq_number, signer, exchange_rate);
         match client.send_transaction(DEFAULT_NETWORK_ID, &block_item).await {
-            Ok(true) => return (block_item.hash(), seq_number),
+            Ok(true) => {
+                stats.reset_update_attempts();
+                return (block_item.hash(), seq_number);
+            }
             Ok(false) => {
+                stats.increment_update_attempts();
                 log::error!("Sending update was rejected, id: {:#?}.", block_item.hash());
                 // We assume that the reason for rejection is an incorrect sequence number
                 // (because it is the only one we can solve)
                 get_new_seq_number = true;
             }
-            Err(e) => log::error!("Error occurred while sending update: {:#?}", e),
+            Err(e) => {
+                stats.increment_update_attempts();
+                // This case could happen for a number of reasons. Currently the node
+                // responds with this for different reasons and we cannot fully determine what
+                // we should do based on the status. If the node ever responds more precisely
+                // then we can revise this to be smarter about it.
+                log::error!("Error occurred while sending update: {:#?}", e);
+                get_new_seq_number = true;
+            }
         }
     }
 }
@@ -84,6 +99,7 @@ pub async fn check_update_status(
     mut client: endpoints::Client,
 ) -> Result<()> {
     let mut interval = interval(Duration::from_secs(CHECK_SUBMISSION_STATUS_INTERVAL));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         interval.tick().await;
         match client
