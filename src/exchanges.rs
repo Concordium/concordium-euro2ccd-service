@@ -1,9 +1,6 @@
 use crate::{
     certificate_resolver::get_client_with_specific_certificate,
-    config::{
-        BITFINEX_CERTIFICATE_LOCATION, BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAXIMUM_RATES_SAVED,
-        MAX_RETRIES,
-    },
+    config::{BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAXIMUM_RATES_SAVED, MAX_RETRIES},
     helpers::{compute_average, within_allowed_deviation},
     prometheus,
 };
@@ -13,13 +10,14 @@ use serde_json::json;
 use std::{
     collections::VecDeque,
     future::Future,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tokio::time::{interval, sleep, Duration};
 
 #[derive(Clone)]
 pub enum Exchange {
-    Bitfinex,
+    Bitfinex(PathBuf),
     Test(String),
 }
 
@@ -190,7 +188,7 @@ async fn exchange_rate_getter<Fut>(
 
 fn build_client(exchange: Exchange) -> Result<reqwest::Client> {
     match exchange {
-        Exchange::Bitfinex => get_client_with_specific_certificate(BITFINEX_CERTIFICATE_LOCATION),
+        Exchange::Bitfinex(cert) => get_client_with_specific_certificate(&cert),
         Exchange::Test(_) => Ok(reqwest::Client::new()),
     }
 }
@@ -213,7 +211,7 @@ pub async fn pull_exchange_rate(
     };
 
     match exchange {
-        Exchange::Bitfinex => {
+        Exchange::Bitfinex(..) => {
             exchange_rate_getter(
                 request_exchange_rate_bitfinex,
                 rate_history,
