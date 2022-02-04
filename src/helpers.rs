@@ -138,6 +138,14 @@ pub fn convert_big_fraction_to_exchange_rate(
     }
 }
 
+pub fn relative_difference(a: &BigRational, b: &BigRational) -> BigRational {
+    if a > b {
+        (a - b) * BigRational::from_integer(100.into()) / b
+    } else {
+        (b - a) * BigRational::from_integer(100.into()) / a
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +159,59 @@ mod tests {
         v.push(BigRational::new(9u32.into(), 1u32.into()));
         assert_eq!(compute_average(&v), Some(BigRational::new(6u32.into(), 1u32.into())))
         // 24 / 4 = 6
+    }
+
+    #[test]
+    fn test_relative_diff() {
+        assert_eq!(
+            relative_difference(
+                &BigRational::from_integer(50.into()),
+                &BigRational::from_integer(40.into())
+            ),
+            BigRational::from_integer(25.into())
+        );
+        assert_eq!(
+            relative_difference(
+                &BigRational::from_integer(50.into()),
+                &BigRational::from_integer(30.into())
+            ),
+            BigRational::from_integer(66.into())
+        );
+        assert_eq!(
+            relative_difference(
+                &BigRational::from_integer(50.into()),
+                &BigRational::from_integer(75.into())
+            ),
+            BigRational::from_integer(50.into())
+        );
+        assert_eq!(
+            relative_difference(
+                &BigRational::from_integer(100.into()),
+                &BigRational::from_integer(50.into())
+            ),
+            BigRational::from_integer(100.into())
+        );
+        assert_eq!(
+            relative_difference(
+                &BigRational::from_integer(50.into()),
+                &BigRational::from_integer(100.into())
+            ),
+            BigRational::from_integer(100.into())
+        );
+        assert_eq!(
+            relative_difference(
+                &BigRational::from_integer(100.into()),
+                &BigRational::from_integer(200.into())
+            ),
+            BigRational::from_integer(100.into())
+        );
+        assert_eq!(
+            relative_difference(
+                &BigRational::from_integer(200.into()),
+                &BigRational::from_integer(100.into())
+            ),
+            BigRational::from_integer(100.into())
+        );
     }
 
     #[test]

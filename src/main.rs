@@ -11,7 +11,9 @@ use clap::AppSettings;
 use concordium_rust_sdk::endpoints;
 use config::MAX_TIME_CHECK_SUBMISSION;
 use exchanges::{pull_exchange_rate, Exchange};
-use helpers::{compute_median, convert_big_fraction_to_exchange_rate, get_signer};
+use helpers::{
+    compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_difference,
+};
 use node::{check_update_status, get_block_summary, send_update};
 use num_rational::BigRational;
 use reqwest::Url;
@@ -95,13 +97,21 @@ struct App {
     )]
     log_level: log::LevelFilter,
     #[structopt(
-        long = "max-deviation",
+        long = "warning-threshold",
         default_value = "30",
-        help = "Percentage max change allowed when adding new readings to the history of exchange \
-                rates. (1-99)",
-        env = "EUR2CCD_SERVICE_MAX_DEVIATION"
+        help = "Determines the threshold where an update triggers a warning (relative difference \
+                in percentage)",
+        env = "EUR2CCD_SERVICE_WARNING_THRESHOLD"
     )]
-    max_deviation: u8,
+    warning_threshold: u8,
+    #[structopt(
+        long = "halt-threshold",
+        default_value = "100",
+        help = "Determines the threshold where an update triggers a warning (relative difference \
+                in percentage)",
+        env = "EUR2CCD_SERVICE_HALT_THRESHOLD"
+    )]
+    halt_threshold: u8,
     #[structopt(
         long = "prometheus-port",
         default_value = "8112",
@@ -172,11 +182,24 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("Could not connect to the node.")?;
 
-    let max_deviation = app.max_deviation;
-    if !(1..=99).contains(&max_deviation) {
-        log::error!("Max change outside of allowed range (1-99): {} ", max_deviation);
+    if !(1..=99).contains(&app.warning_threshold) {
+        log::error!(
+            "Warning threshold outside of allowed range (1-99): {} ",
+            app.warning_threshold
+        );
         bail!("Error during startup");
     }
+    if !(1..=99).contains(&app.halt_threshold) {
+        log::error!("Halt threshold outside of allowed range (1-99): {} ", app.halt_threshold);
+        bail!("Error during startup");
+    }
+    if app.halt_threshold <= app.warning_threshold {
+        log::error!("Warning threshold must be lower than halt threshold");
+        bail!("Error during startup");
+    }
+
+    let warning_threshold = BigRational::from_integer(app.warning_threshold.into());
+    let halt_threshold = BigRational::from_integer(app.warning_threshold.into());
 
     let (registry, stats) =
         prometheus::initialize().await.context("Failed to start the prometheus server.")?;
@@ -186,6 +209,8 @@ async fn main() -> anyhow::Result<()> {
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
     let initial_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
+    let mut prev_rate =
+        BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into());
     log::debug!("Loaded initial block summary, current exchange rate: {:#?}", initial_rate);
 
     let exchange = match app.test_exchange {
@@ -235,17 +260,37 @@ async fn main() -> anyhow::Result<()> {
             match compute_median(&*rates_lock) {
                 Some(r) => r,
                 None => {
-                    log::error!("Unable to compute average for update");
+                    log::error!("Unable to compute median for update");
                     continue;
                 }
             }
         }; // drop lock
-        log::debug!("Computed average: {:#?}", rate);
+        log::debug!("Computed median: {:#?}", rate);
+
+        let diff = relative_difference(&rate, &prev_rate);
+        if diff > halt_threshold {
+            log::error!(
+                "New update violates halt threshold, changing from {} to {} has {} % relative \
+                 difference",
+                prev_rate,
+                rate,
+                diff
+            );
+            bail!("Halt threshold violated");
+        } else if diff > warning_threshold {
+            log::warn!(
+                "New update violates warning threshold, changing from {} to {} has {} % relative \
+                 difference",
+                prev_rate,
+                rate,
+                diff
+            );
+        }
 
         // Convert the rate into an ExchangeRate (i.e. convert the bigints to u64's).
         // Also multiplies with 1000000 microCCD/CCD
         let new_rate =
-            convert_big_fraction_to_exchange_rate(rate * &million, conversion_threshold.clone());
+            convert_big_fraction_to_exchange_rate(&rate * &million, conversion_threshold.clone());
         log::debug!("Converted new_rate: {:#?}", new_rate);
 
         let (submission_id, new_seq_number) =
@@ -268,6 +313,7 @@ async fn main() -> anyhow::Result<()> {
                     // new_seq_number is the sequence number, which was used to successfully send
                     // the update.
                     seq_number = new_seq_number.next();
+                    prev_rate = rate;
                     log::info!(
                         "Succesfully updated exchange rate to: {:#?} microCCD/CCD, with id {}",
                         new_rate,
