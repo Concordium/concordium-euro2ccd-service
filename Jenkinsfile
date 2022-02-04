@@ -2,7 +2,7 @@ pipeline {
     agent any
     environment {
         S3_BUCKET = "s3://euro2ccd.concordium.com"
-        OUT_FILE = "euro2ccd-${tag}.deb"
+        OUT_FILE = "concordium-eur2ccd_${tag}_amd64.deb"
         OUT_PATH = "${S3_BUCKET}/${OUT_FILE}"
         OUT_DIR = sh(script: 'mktemp -d', returnStdout: true).trim()
     }
