@@ -8,6 +8,8 @@ pub const BITFINEX_CERTIFICATE_LOCATION: &str = "./resources/bitfinex-com.der";
 
 pub const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 5; // seconds
 pub const RETRY_SUBMISSION_INTERVAL: u64 = 10; // seconds
+/// Expiry of the update instruction. This should be a bit less than
+/// [MAX_TIME_CHECK_SUBMISSION].
 pub const UPDATE_EXPIRY_OFFSET: u64 = 100; // seconds
 
 pub const AWS_REGION: &str = "eu-central-1";

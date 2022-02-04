@@ -4,8 +4,8 @@ use crate::{
     helpers::{compute_average, within_allowed_deviation},
     prometheus,
 };
-use anyhow::Result;
 use num_rational::BigRational;
+use reqwest::Url;
 use serde_json::json;
 use std::{
     collections::VecDeque,
@@ -18,14 +18,14 @@ use tokio::time::{interval, sleep, Duration};
 #[derive(Clone)]
 pub enum Exchange {
     Bitfinex(PathBuf),
-    Test(String),
+    Test(Url),
 }
 
 /**
  * Wrapper for a request function, to continous attempts, with exponential
  * backoff.
  */
-async fn request_with_backoff<Fut, T, Input>(
+async fn request_with_backoff<'a, Fut: 'a, T, Input>(
     input: Input,
     request_fn: impl Fn(Input) -> Fut,
     initial_delay: u64,
@@ -71,13 +71,23 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
         // Bitfinex api specifies that a successful status means the response is a json
         // array with a single float number.
         match resp.json::<Vec<f64>>().await {
-            Ok(v) => {
+            Ok(v) if v.len() == 1 => {
                 let raw_rate = v[0];
                 log::debug!("Raw exchange rate CCD/EUR polled from bitfinex: {:#?}", raw_rate);
                 return Some(raw_rate);
             }
-            Err(_) => {
-                log::error!("Unable to parse response from bitfinex as JSON (Breaking API)")
+            Ok(arr) => {
+                log::error!(
+                    "Unexpected response from the exchange. Expected an array of length 1, got \
+                     array of length {}.",
+                    arr.len()
+                )
+            }
+            Err(err) => {
+                log::error!(
+                    "Unable to parse response from bitfinex as JSON (Breaking API): {}",
+                    err
+                )
             }
         };
     } else {
@@ -89,8 +99,8 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
 /**
  * Get exchange rate from test exchange. (Should only be used for testing)
  */
-async fn request_exchange_rate_test(client: reqwest::Client, url: String) -> Option<f64> {
-    let resp = match client.get(url).send().await {
+async fn request_exchange_rate_test(client: reqwest::Client, url: Url) -> Option<f64> {
+    let resp = match client.get(url.clone()).send().await {
         Ok(o) => o,
         Err(e) => {
             log::warn!("Unable to retrieve from test exchange: {:#?}", e);
@@ -104,12 +114,12 @@ async fn request_exchange_rate_test(client: reqwest::Client, url: String) -> Opt
                 log::debug!("Raw exchange rate CCD/EUR polled from test exchange: {:#?}", raw_rate);
                 return Some(raw_rate);
             }
-            Err(_) => {
-                log::error!("Unable to parse response from test exchange as JSON")
+            Err(err) => {
+                log::error!("Unable to parse response from test exchange as JSON: {}", err)
             }
         };
     } else {
-        log::error!("Error response from test exchange: {:?}", resp.status());
+        log::error!("Error response from test exchange: {}", resp.status());
     };
     None
 }
@@ -121,14 +131,16 @@ async fn request_exchange_rate_test(client: reqwest::Client, url: String) -> Opt
  * queue exceeds max size.
  */
 async fn exchange_rate_getter<Fut>(
+    stats: prometheus::Stats,
     request_fn: impl Fn(reqwest::Client) -> Fut + Clone,
     rate_history_mutex: Arc<Mutex<VecDeque<BigRational>>>,
     max_deviation: u8,
-    pull_interval: u64,
+    pull_interval: u32,
     client: reqwest::Client,
 ) where
-    Fut: Future<Output = Option<f64>>, {
-    let mut interval = interval(Duration::from_secs(pull_interval));
+    Fut: Future<Output = Option<f64>> + 'static, {
+    let mut interval = interval(Duration::from_secs(pull_interval.into()));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut first_time = true;
 
     loop {
@@ -148,7 +160,7 @@ async fn exchange_rate_getter<Fut>(
         };
 
         log::info!("New exchange rate polled: {:#?}", raw_rate);
-        prometheus::update_rate(raw_rate);
+        stats.update_rate(raw_rate);
         let rate = match BigRational::from_float(raw_rate) {
             Some(r) => r,
             None => {
@@ -165,7 +177,7 @@ async fn exchange_rate_getter<Fut>(
             continue;
         }
 
-        let current_average = match compute_average(rates.clone()) {
+        let current_average = match compute_average(&rates) {
             Some(r) => r,
             None => {
                 log::error!("Unable to compute average to rational");
@@ -174,19 +186,18 @@ async fn exchange_rate_getter<Fut>(
         };
         if within_allowed_deviation(&current_average, &rate, max_deviation) {
             rates.push_back(rate);
-            if rates.iter().map(|_| 1).sum::<u64>() > MAXIMUM_RATES_SAVED {
+            if rates.len() as u64 > MAXIMUM_RATES_SAVED {
                 rates.pop_front();
             }
         } else {
-            prometheus::increment_dropped_times();
+            stats.increment_dropped_times();
             log::warn!("Polled rate deviated too much, and has been dropped: {:#?}", rate);
         }
         log::debug!("Currently saved rates: {:#?}", *rates);
-        drop(rates);
     }
 }
 
-fn build_client(exchange: Exchange) -> Result<reqwest::Client> {
+fn build_client(exchange: &Exchange) -> anyhow::Result<reqwest::Client> {
     match exchange {
         Exchange::Bitfinex(cert) => get_client_with_specific_certificate(&cert),
         Exchange::Test(_) => Ok(reqwest::Client::new()),
@@ -197,12 +208,13 @@ fn build_client(exchange: Exchange) -> Result<reqwest::Client> {
  * Get the new MicroCCD/Euro exchange rate
  */
 pub async fn pull_exchange_rate(
+    stats: prometheus::Stats,
     exchange: Exchange,
     rate_history: Arc<Mutex<VecDeque<BigRational>>>,
     max_deviation: u8,
-    pull_interval: u64,
-) -> Result<()> {
-    let client = match build_client(exchange.clone()) {
+    pull_interval: u32,
+) -> anyhow::Result<()> {
+    let client = match build_client(&exchange) {
         Ok(c) => c,
         Err(e) => {
             log::error!("Error while building client: {:#?}", e);
@@ -211,8 +223,9 @@ pub async fn pull_exchange_rate(
     };
 
     match exchange {
-        Exchange::Bitfinex(..) => {
+        Exchange::Bitfinex(_) => {
             exchange_rate_getter(
+                stats,
                 request_exchange_rate_bitfinex,
                 rate_history,
                 max_deviation,
@@ -223,6 +236,7 @@ pub async fn pull_exchange_rate(
         }
         Exchange::Test(url) => {
             exchange_rate_getter(
+                stats,
                 |client| request_exchange_rate_test(client, url.clone()),
                 rate_history,
                 max_deviation,
