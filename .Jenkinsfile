@@ -16,9 +16,9 @@ pipeline {
                     set -euxo pipefail
 
                     id=$(docker create ccd-service-builder)
-                    docker cp $id:/build/pkg-root/ $outfile
+                    docker cp $id:/build/pkg-root/ eur2ccd-deb
                     docker rm $id
-
+                    mv eur2ccd-deb/pkg-root/$OUT_FILE .
                 '''.stripIndent()
                 stash includes: '/${OUT_FILE}', name: 'built'
             }
