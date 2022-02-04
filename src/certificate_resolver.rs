@@ -4,7 +4,7 @@ use rustls::{
     internal::msgs::handshake::DigitallySignedStruct,
     Certificate, ClientConfig, Error, RootCertStore, ServerName, SignatureScheme,
 };
-use std::{fs::File, io::Read, sync::Arc, time::SystemTime};
+use std::{fs::File, io::Read, path::Path, sync::Arc, time::SystemTime};
 
 struct SpecificResolver {
     certificate:       Certificate,
@@ -65,7 +65,7 @@ impl ServerCertVerifier for SpecificResolver {
     fn request_scts(&self) -> bool { self.internal_verifier.request_scts() }
 }
 
-pub fn get_client_with_specific_certificate(location: &str) -> Result<reqwest::Client> {
+pub fn get_client_with_specific_certificate(location: &Path) -> Result<reqwest::Client> {
     let mut buf = Vec::new();
     File::open(location)?.read_to_end(&mut buf)?;
     let cert = Certificate(buf);

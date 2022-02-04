@@ -52,6 +52,13 @@ struct App {
     )]
     secret_names: Vec<String>,
     #[structopt(
+        long = "bitfinex-certificate",
+        help = "Location of the bitfinex certificate.",
+        env = "EURO2CCD_SERVICE_BITFINEX_CERTIFICATE",
+        default_value = config::BITFINEX_CERTIFICATE_LOCATION,
+    )]
+    bitfinex_cert: PathBuf,
+    #[structopt(
         long = "update-interval",
         help = "How often to update the exchange rate. (In seconds)",
         env = "EURO2CCD_SERVICE_UPDATE_INTERVAL",
@@ -159,7 +166,7 @@ async fn main() -> Result<()> {
 
     let exchange = match app.test_exchange {
         Some(url) => Exchange::Test(url),
-        None => Exchange::Bitfinex,
+        None => Exchange::Bitfinex(app.bitfinex_cert),
     };
 
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
