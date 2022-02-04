@@ -2,7 +2,8 @@ pipeline {
     agent any
     environment {
         S3_BUCKET = "s3://euro2ccd.concordium.com"
-        OUT_FILE = "concordium-eur2ccd_${tag}_amd64.deb"
+        PKG_FILE = "concordium-eur2ccd_${version}_amd64.deb"
+        OUT_FILE = "concordium-eur2ccd_${version}-${build}_amd64.deb"
         OUT_PATH = "${S3_BUCKET}/${OUT_FILE}"
         OUT_DIR = sh(script: 'mktemp -d', returnStdout: true).trim()
     }
@@ -18,8 +19,7 @@ pipeline {
                     id=$(docker create ccd-service-builder)
                     docker cp $id:/build/pkg-root/ eur2ccd-deb
                     docker rm $id
-                    ls -lrt eur2ccd-deb
-                    mv eur2ccd-deb/$OUT_FILE .
+                    mv eur2ccd-deb/$PKG_FILE .
                 '''.stripIndent()
             }
         }
@@ -27,7 +27,7 @@ pipeline {
             steps {
                 sh '''\
                     # Push to S3.
-                    aws s3 cp ${OUT_FILE} "${OUT_PATH}" 
+                    aws s3 cp ${PKG_FILE} "${OUT_PATH}" 
                 '''.stripIndent()
             }
         }
