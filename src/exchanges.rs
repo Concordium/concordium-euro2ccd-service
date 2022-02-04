@@ -79,7 +79,7 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
             Ok(arr) => {
                 log::error!(
                     "Unexpected response from the exchange. Expected an array of length 1, got \
-                     array of lenght {}.",
+                     array of length {}.",
                     arr.len()
                 )
             }
