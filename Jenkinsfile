@@ -21,12 +21,10 @@ pipeline {
                     ls -lrt eur2ccd-deb
                     mv eur2ccd-deb/$OUT_FILE .
                 '''.stripIndent()
-                stash includes: './${OUT_FILE}', name: 'built'
             }
         }
        stage('Publish') {
             steps {
-                unstash 'built'
                 sh '''\
                     # Push to S3.
                     aws s3 cp ${OUT_FILE} "${OUT_PATH}" 
