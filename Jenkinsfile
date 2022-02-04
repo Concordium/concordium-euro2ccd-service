@@ -18,8 +18,8 @@ pipeline {
                     id=$(docker create ccd-service-builder)
                     docker cp $id:/build/pkg-root/ eur2ccd-deb
                     docker rm $id
-                    ls -lrt eur2ccd-deb/pkg-root
-                    mv eur2ccd-deb/pkg-root/$OUT_FILE .
+                    ls -lrt eur2ccd-deb
+                    mv eur2ccd-deb/$OUT_FILE .
                 '''.stripIndent()
                 stash includes: '/${OUT_FILE}', name: 'built'
             }
