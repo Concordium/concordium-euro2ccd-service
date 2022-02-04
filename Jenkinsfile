@@ -21,7 +21,7 @@ pipeline {
                     ls -lrt eur2ccd-deb
                     mv eur2ccd-deb/$OUT_FILE .
                 '''.stripIndent()
-                stash includes: '${OUT_FILE}', name: 'built'
+                stash includes: './${OUT_FILE}', name: 'built'
             }
         }
        stage('Publish') {
