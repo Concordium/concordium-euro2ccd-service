@@ -39,8 +39,6 @@ pub struct Stats {
 impl Stats {
     pub fn update_rate(&self, rate: f64) { self.exchange_rate.set(rate) }
 
-    pub fn increment_dropped_times(&self) { self.dropped_times.inc() }
-
     pub fn increment_update_attempts(&self) { self.update_attempts.inc() }
 
     pub fn reset_update_attempts(&self) { self.update_attempts.set(0) }

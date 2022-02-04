@@ -11,7 +11,7 @@ use clap::AppSettings;
 use concordium_rust_sdk::endpoints;
 use config::MAX_TIME_CHECK_SUBMISSION;
 use exchanges::{pull_exchange_rate, Exchange};
-use helpers::{compute_average, convert_big_fraction_to_exchange_rate, get_signer};
+use helpers::{compute_median, convert_big_fraction_to_exchange_rate, get_signer};
 use node::{check_update_status, get_block_summary, send_update};
 use num_rational::BigRational;
 use reqwest::Url;
@@ -110,6 +110,13 @@ struct App {
     )]
     prometheus_port: u16,
     #[structopt(
+        long = "max_rates_saved",
+        help = "Determines the size of the history of rates from the exchange",
+        env = "EUR2CCD_SERVICE_MAXIMUM_RATES_SAVED",
+        default_value = "60"
+    )]
+    max_rates_saved: usize,
+    #[structopt(
         long = "test",
         help = "If set, allows using test parameters.",
         env = "EUR2CCD_SERVICE_TEST",
@@ -188,14 +195,14 @@ async fn main() -> anyhow::Result<()> {
 
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
 
-    let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(30)));
+    let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(app.max_rates_saved)));
 
     tokio::spawn(pull_exchange_rate(
         stats.clone(),
         exchange,
         rates_mutex.clone(),
-        max_deviation,
         app.pull_interval,
+        app.max_rates_saved,
     ));
 
     let secret_keys = if app.local_keys.is_empty() {
@@ -225,7 +232,7 @@ async fn main() -> anyhow::Result<()> {
 
         let rate = {
             let rates_lock = rates_mutex.lock().unwrap();
-            match compute_average(&*rates_lock) {
+            match compute_median(&*rates_lock) {
                 Some(r) => r,
                 None => {
                     log::error!("Unable to compute average for update");

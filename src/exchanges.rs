@@ -1,7 +1,6 @@
 use crate::{
     certificate_resolver::get_client_with_specific_certificate,
-    config::{BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAXIMUM_RATES_SAVED, MAX_RETRIES},
-    helpers::{compute_average, within_allowed_deviation},
+    config::{BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAX_RETRIES},
     prometheus,
 };
 use num_rational::BigRational;
@@ -134,14 +133,13 @@ async fn exchange_rate_getter<Fut>(
     stats: prometheus::Stats,
     request_fn: impl Fn(reqwest::Client) -> Fut + Clone,
     rate_history_mutex: Arc<Mutex<VecDeque<BigRational>>>,
-    max_deviation: u8,
     pull_interval: u32,
+    max_rates_saved: usize,
     client: reqwest::Client,
 ) where
     Fut: Future<Output = Option<f64>> + 'static, {
     let mut interval = interval(Duration::from_secs(pull_interval.into()));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut first_time = true;
 
     loop {
         interval.tick().await;
@@ -161,6 +159,7 @@ async fn exchange_rate_getter<Fut>(
 
         log::info!("New exchange rate polled: {:#?}", raw_rate);
         stats.update_rate(raw_rate);
+
         let rate = match BigRational::from_float(raw_rate) {
             Some(r) => r,
             None => {
@@ -168,32 +167,13 @@ async fn exchange_rate_getter<Fut>(
                 continue;
             }
         };
-        let mut rates = rate_history_mutex.lock().unwrap();
-
-        // First time rates are empty, so we just add the exchange rate:
-        if first_time {
+        {
+            let mut rates = rate_history_mutex.lock().unwrap();
             rates.push_back(rate);
-            first_time = false;
-            continue;
-        }
-
-        let current_average = match compute_average(&rates) {
-            Some(r) => r,
-            None => {
-                log::error!("Unable to compute average to rational");
-                continue;
-            }
-        };
-        if within_allowed_deviation(&current_average, &rate, max_deviation) {
-            rates.push_back(rate);
-            if rates.len() as u64 > MAXIMUM_RATES_SAVED {
+            if rates.len() > max_rates_saved {
                 rates.pop_front();
             }
-        } else {
-            stats.increment_dropped_times();
-            log::warn!("Polled rate deviated too much, and has been dropped: {:#?}", rate);
-        }
-        log::debug!("Currently saved rates: {:#?}", *rates);
+        }; // drop lock
     }
 }
 
@@ -211,8 +191,8 @@ pub async fn pull_exchange_rate(
     stats: prometheus::Stats,
     exchange: Exchange,
     rate_history: Arc<Mutex<VecDeque<BigRational>>>,
-    max_deviation: u8,
     pull_interval: u32,
+    max_rates_saved: usize,
 ) -> anyhow::Result<()> {
     let client = match build_client(&exchange) {
         Ok(c) => c,
@@ -228,8 +208,8 @@ pub async fn pull_exchange_rate(
                 stats,
                 request_exchange_rate_bitfinex,
                 rate_history,
-                max_deviation,
                 pull_interval,
+                max_rates_saved,
                 client,
             )
             .await
@@ -239,8 +219,8 @@ pub async fn pull_exchange_rate(
                 stats,
                 |client| request_exchange_rate_test(client, url.clone()),
                 rate_history,
-                max_deviation,
                 pull_interval,
+                max_rates_saved,
                 client,
             )
             .await

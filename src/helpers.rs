@@ -1,7 +1,8 @@
 use concordium_rust_sdk::types::{BlockSummary, ExchangeRate, UpdateKeysIndex};
 use crypto_common::{base16_encode_string, types::KeyPair};
+use num_integer::Integer;
 use num_rational::BigRational;
-use num_traits::{identities::One, CheckedDiv, CheckedSub, Signed, ToPrimitive, Zero};
+use num_traits::{CheckedDiv, CheckedSub, Signed, ToPrimitive, Zero};
 use std::collections::VecDeque;
 
 /**
@@ -40,32 +41,33 @@ pub fn get_signer(
     }
     Ok(signer)
 }
-
 /**
  * Compute the average of the rates stored in the given VeqDeque.
  * Returns None if the queue is empty.
  */
-pub fn compute_average(rates: &VecDeque<BigRational>) -> Option<BigRational> {
-    let len = rates.len();
+pub fn compute_average(rates: &[BigRational]) -> Option<BigRational> {
     rates
         .iter()
         .fold(BigRational::zero(), |a, b| a + b)
-        .checked_div(&BigRational::from_integer(len.into()))
+        .checked_div(&BigRational::from_integer(rates.len().into()))
 }
 
 /**
- * Determine whether the candidate is within the range:
- * [baseline - max_deviation % , baseline + max_deviation %]
- * N.B: max_deviation is expected to be given as percentages.
+ * Compute the median of the rates stored in the given VeqDeque.
+ * Returns None if the queue is empty.
  */
-pub fn within_allowed_deviation(
-    baseline: &BigRational,
-    candidate: &BigRational,
-    max_deviation: u8,
-) -> bool {
-    let max_deviation = BigRational::new(max_deviation.into(), 100.into());
-    !((baseline * (BigRational::one() + &max_deviation) <= *candidate)
-        || (baseline * (BigRational::one() - max_deviation) >= *candidate))
+pub fn compute_median(rates: &VecDeque<BigRational>) -> Option<BigRational> {
+    let len = rates.len();
+    if len == 0 {
+        return None;
+    }
+    let mut rate_vec = rates.iter().cloned().collect::<Vec<BigRational>>();
+    rate_vec.sort();
+    if len.is_odd() {
+        Some(rate_vec[(len - 1) / 2].clone())
+    } else {
+        compute_average(&rate_vec[(len - 1) / 2..len / 2])
+    }
 }
 
 /**
@@ -141,14 +143,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_take_average() {
+    fn test_compute_average() {
+        let mut v = Vec::new();
+        v.push(BigRational::new(1.into(), 1.into()));
+        v.push(BigRational::new(9u32.into(), 1u32.into()));
+        v.push(BigRational::new(5u32.into(), 1u32.into()));
+        v.push(BigRational::new(9u32.into(), 1u32.into()));
+        assert_eq!(compute_average(&v), Some(BigRational::new(6u32.into(), 1u32.into())))
+        // 24 / 4 = 6
+    }
+
+    #[test]
+    fn test_compute_median() {
         let mut v = VecDeque::new();
         v.push_back(BigRational::new(1.into(), 1.into()));
         v.push_back(BigRational::new(9u32.into(), 1u32.into()));
         v.push_back(BigRational::new(5u32.into(), 1u32.into()));
         v.push_back(BigRational::new(9u32.into(), 1u32.into()));
-        assert_eq!(compute_average(&v), Some(BigRational::new(6u32.into(), 1u32.into())))
-        // 24 / 4 = 6
+        assert_eq!(compute_median(&v), Some(BigRational::new(7u32.into(), 1u32.into())))
+        // (5 + 9) / 2 = 7
+    }
+
+    #[test]
+    fn test_compute_median_2() {
+        let mut v = VecDeque::new();
+        v.push_back(BigRational::new(20.into(), 1.into()));
+        v.push_back(BigRational::new(100u32.into(), 9u32.into()));
+        v.push_back(BigRational::new(1u32.into(), 12u32.into()));
+        v.push_back(BigRational::new(1u32.into(), 100u32.into()));
+        assert_eq!(compute_median(&v), Some(BigRational::new(403u32.into(), 72u32.into())))
+    }
+
+    #[test]
+    fn test_compute_median_odd() {
+        let mut v = VecDeque::new();
+        v.push_back(BigRational::new(20000.into(), 1.into()));
+        v.push_back(BigRational::new(20.into(), 1.into()));
+        v.push_back(BigRational::new(100u32.into(), 9u32.into()));
+        v.push_back(BigRational::new(1u32.into(), 12u32.into()));
+        v.push_back(BigRational::new(1u32.into(), 100u32.into()));
+        assert_eq!(compute_median(&v), Some(BigRational::new(100u32.into(), 9u32.into())))
     }
 
     fn test_convert_u64(num: u64, den: u64) {
