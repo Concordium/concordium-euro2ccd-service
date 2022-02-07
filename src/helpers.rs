@@ -71,23 +71,6 @@ pub fn compute_median(rates: &VecDeque<BigRational>) -> Option<BigRational> {
 }
 
 /**
- * Return the value of low or high, which is closest to the target.
- */
-fn get_closest(low: ExchangeRate, high: ExchangeRate, target: BigRational) -> ExchangeRate {
-    let big_low = BigRational::new(low.numerator.into(), low.denominator.into());
-    let big_high = BigRational::new(high.numerator.into(), high.denominator.into());
-    let low_diff = target.checked_sub(&big_low);
-    let high_diff = big_high.checked_sub(&target);
-    match (low_diff, high_diff) {
-        (None, Some(_)) => high,
-        (Some(_), None) => low,
-        (Some(l_d), Some(h_d)) if l_d > h_d => high,
-        (Some(_), Some(_)) => low,
-        (None, None) => panic!("Could not calculate difference for high nor low"),
-    }
-}
-
-/**
  * Convert a BigRational type into an exchange rate.
  * 1. Check if the BigRational can be translated directly (both bigints are
  * u64)
@@ -257,7 +240,7 @@ mod tests {
     fn test_convert_u64(num: u64, den: u64) {
         let result = convert_big_fraction_to_exchange_rate(
             BigRational::new(num.into(), den.into()),
-            BigRational::new(1.into(), 1000000000000u64.into()),
+            &BigRational::new(1.into(), 1000000000000u64.into()),
         );
         assert_eq!(num, result.numerator);
         assert_eq!(den, result.denominator);
@@ -266,7 +249,7 @@ mod tests {
     fn test_convert_u128(num: u128, den: u128, res_num: u64, res_den: u64) {
         let result = convert_big_fraction_to_exchange_rate(
             BigRational::new(num.into(), den.into()),
-            BigRational::new(1.into(), 1000000000000u64.into()),
+            &BigRational::new(1.into(), 1000000000000u64.into()),
         );
         assert_eq!(res_num, result.numerator);
         assert_eq!(res_den, result.denominator);

@@ -25,6 +25,7 @@ use std::{
 };
 use structopt::StructOpt;
 use tokio::time::{interval_at, timeout, Duration, Instant};
+use num_traits::CheckedDiv;
 
 #[derive(StructOpt, Debug)]
 struct App {
@@ -202,6 +203,8 @@ async fn main() -> anyhow::Result<()> {
         bail!("Error during startup");
     }
 
+    let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
+
     let warning_threshold = BigRational::from_integer(app.warning_threshold.into());
     let halt_threshold = BigRational::from_integer(app.halt_threshold.into());
 
@@ -213,8 +216,7 @@ async fn main() -> anyhow::Result<()> {
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
     let initial_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
-    let mut prev_rate =
-        BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into());
+    let mut prev_rate = BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into()).checked_div(&million).expect("Unable to convert current exchange rate to microccd/euro");
     log::debug!(
         "Loaded initial block summary, current exchange rate: {}/{}",
         initial_rate.numerator,
@@ -226,7 +228,6 @@ async fn main() -> anyhow::Result<()> {
         None => Exchange::Bitfinex(app.bitfinex_cert),
     };
 
-    let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
 
     let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(app.max_rates_saved)));
 
