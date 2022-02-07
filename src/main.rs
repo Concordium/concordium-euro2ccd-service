@@ -1,4 +1,3 @@
-mod certificate_resolver;
 mod config;
 mod exchanges;
 mod helpers;
@@ -50,14 +49,6 @@ struct App {
         use_delimiter = true
     )]
     secret_names: Vec<String>,
-    #[structopt(
-        long = "bitfinex-cert",
-        help = "Location of the bitfinex certificate file.",
-        env = "EUR2CCD_SERVICE_BITFINEX_CERTIFICATE",
-        default_value = config::BITFINEX_CERTIFICATE_LOCATION,
-        conflicts_with = "test",
-    )]
-    bitfinex_cert: PathBuf,
     #[structopt(
         long = "aws-region",
         help = "Which AWS region to get the keys from.",
@@ -256,7 +247,7 @@ async fn main() -> anyhow::Result<()> {
 
     let exchange = match app.test_exchange {
         Some(url) => Exchange::Test(url),
-        None => Exchange::Bitfinex(app.bitfinex_cert),
+        None => Exchange::Bitfinex,
     };
 
 

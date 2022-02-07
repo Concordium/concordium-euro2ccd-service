@@ -1,5 +1,4 @@
 use crate::{
-    certificate_resolver::get_client_with_specific_certificate,
     config::{BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAX_RETRIES},
     prometheus,
 };
@@ -9,14 +8,13 @@ use serde_json::json;
 use std::{
     collections::VecDeque,
     future::Future,
-    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tokio::time::{interval, sleep, Duration};
 
 #[derive(Clone)]
 pub enum Exchange {
-    Bitfinex(PathBuf),
+    Bitfinex,
     Test(Url),
 }
 
@@ -177,13 +175,6 @@ async fn exchange_rate_getter<Fut>(
     }
 }
 
-fn build_client(exchange: &Exchange) -> anyhow::Result<reqwest::Client> {
-    match exchange {
-        Exchange::Bitfinex(cert) => get_client_with_specific_certificate(&cert),
-        Exchange::Test(_) => Ok(reqwest::Client::new()),
-    }
-}
-
 /**
  * Get the new MicroCCD/Euro exchange rate
  */
@@ -194,16 +185,10 @@ pub async fn pull_exchange_rate(
     pull_interval: u32,
     max_rates_saved: usize,
 ) -> anyhow::Result<()> {
-    let client = match build_client(&exchange) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Error while building client: {:#?}", e);
-            return Ok(());
-        }
-    };
+    let client = reqwest::Client::new();
 
     match exchange {
-        Exchange::Bitfinex(_) => {
+        Exchange::Bitfinex => {
             exchange_rate_getter(
                 stats,
                 request_exchange_rate_bitfinex,
