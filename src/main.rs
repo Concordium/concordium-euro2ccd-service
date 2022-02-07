@@ -28,11 +28,12 @@ use tokio::time::{interval_at, timeout, Duration, Instant};
 struct App {
     #[structopt(
         long = "node",
-        help = "location of the GRPC interface of the node.",
+        help = "location of the GRPC interface of the node(s).",
         default_value = "http://localhost:10000",
+        use_delimiter = true,
         env = "EUR2CCD_SERVICE_NODE"
     )]
-    endpoint: endpoints::Endpoint,
+    endpoint: Vec<endpoints::Endpoint>,
     #[structopt(
         long = "rpc-token",
         help = "GRPC interface access token for accessing the node.",
@@ -146,6 +147,19 @@ struct App {
     dry_run: bool,
 }
 
+async fn get_node_client(
+    endpoints: Vec<endpoints::Endpoint>,
+    token: &str,
+) -> anyhow::Result<endpoints::Client> {
+    for node_ep in endpoints.into_iter() {
+        match endpoints::Client::connect(node_ep, token.to_string()).await {
+            Ok(client) => return Ok(client),
+            Err(_) => continue,
+        };
+    }
+    bail!("Unable to connect to any node");
+}
+
 /// This main program loop.
 /// The program is structured into two tasks. A background task is spawned that
 /// continuously polls the exchange for the current exchange rate and saves the
@@ -166,7 +180,6 @@ async fn main() -> anyhow::Result<()> {
 
     // Setup
     // (Stop if error occurs)
-
     let mut log_builder = env_logger::Builder::new();
 
     log_builder.filter_module(module_path!(), app.log_level);
@@ -174,9 +187,7 @@ async fn main() -> anyhow::Result<()> {
 
     log::debug!("Starting with configuration {:#?}", app);
 
-    let node_client = endpoints::Client::connect(app.endpoint, app.token)
-        .await
-        .context("Could not connect to the node.")?;
+    anyhow::ensure!(!app.endpoint.is_empty(), "At least one node must be provided.");
 
     if !(1..=99).contains(&app.warning_increase_threshold) {
         log::error!(
@@ -230,7 +241,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(prometheus::serve_prometheus(registry, app.prometheus_port));
     log::debug!("Started prometheus");
 
-    let summary = get_block_summary(node_client.clone()).await?;
+    let summary =
+        get_block_summary(get_node_client(app.endpoint.clone(), &app.token).await?).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
     let initial_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
     let mut prev_rate =
@@ -351,6 +363,14 @@ async fn main() -> anyhow::Result<()> {
         log::debug!("Converted new_rate: {:#?}", new_rate);
 
         if let Some(signer) = signer.as_ref() {
+            let node_client = match get_node_client(app.endpoint.clone(), &app.token).await {
+                Ok(client) => client,
+                Err(e) => {
+                    log::error!("Unable to send update: {}, skipping this update", e);
+                    continue;
+                }
+            };
+
             let (submission_id, new_seq_number) =
                 send_update(&stats, seq_number, &signer, new_rate, node_client.clone()).await;
             log::info!("Sent update with submission id: {}", submission_id);
