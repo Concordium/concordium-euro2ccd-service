@@ -44,6 +44,7 @@ struct App {
         long = "secret-names",
         help = "Secret names on AWS to get govenance keys from.",
         env = "EUR2CCD_SERVICE_SECRET_NAMES",
+        conflicts_with = "local-keys",
         use_delimiter = true
     )]
     secret_names: Vec<String>,
@@ -57,7 +58,7 @@ struct App {
     region: String,
     #[structopt(
         long = "update-interval",
-        help = "How often to update the exchange rate. (In seconds)",
+        help = "How often to update the exchange rate on chain. (In seconds)",
         env = "EUR2CCD_SERVICE_UPDATE_INTERVAL",
         default_value = "1800"
     )]
@@ -122,13 +123,6 @@ struct App {
         default_value = "60"
     )]
     max_rates_saved: usize,
-    #[structopt(
-        long = "test",
-        help = "If set, allows using test parameters.",
-        env = "EUR2CCD_SERVICE_TEST",
-        group = "testing"
-    )]
-    test: bool,
     #[structopt(
         long = "test-exchange",
         help = "If set to true, pulls exchange rate from the given location (see local_exchange \
