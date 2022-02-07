@@ -125,3 +125,21 @@ pub async fn check_update_status(
     }
     Ok(())
 }
+
+/**
+ * Given a vector of endpoints, return the first one, which allows us to
+ * connect to it. Returns an error if we are not able to connect to any of
+ * the nodes.
+ */
+pub async fn get_node_client(
+    endpoints: Vec<endpoints::Endpoint>,
+    token: &str,
+) -> anyhow::Result<endpoints::Client> {
+    for node_ep in endpoints.into_iter() {
+        match endpoints::Client::connect(node_ep, token.to_string()).await {
+            Ok(client) => return Ok(client),
+            Err(_) => continue,
+        };
+    }
+    anyhow::bail!("Unable to connect to any node");
+}

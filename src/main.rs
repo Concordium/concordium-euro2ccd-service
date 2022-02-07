@@ -11,9 +11,8 @@ use concordium_rust_sdk::endpoints;
 use config::MAX_TIME_CHECK_SUBMISSION;
 use exchanges::{pull_exchange_rate, Exchange};
 use helpers::{compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_change};
-use node::{check_update_status, get_block_summary, send_update};
+use node::{check_update_status, get_block_summary, get_node_client, send_update};
 use num_rational::BigRational;
-use num_traits::CheckedDiv;
 use reqwest::Url;
 use secretsmanager::{get_governance_from_aws, get_governance_from_file};
 use std::{
@@ -147,19 +146,6 @@ struct App {
     dry_run: bool,
 }
 
-async fn get_node_client(
-    endpoints: Vec<endpoints::Endpoint>,
-    token: &str,
-) -> anyhow::Result<endpoints::Client> {
-    for node_ep in endpoints.into_iter() {
-        match endpoints::Client::connect(node_ep, token.to_string()).await {
-            Ok(client) => return Ok(client),
-            Err(_) => continue,
-        };
-    }
-    bail!("Unable to connect to any node");
-}
-
 /// This main program loop.
 /// The program is structured into two tasks. A background task is spawned that
 /// continuously polls the exchange for the current exchange rate and saves the
@@ -246,9 +232,7 @@ async fn main() -> anyhow::Result<()> {
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
     let initial_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
     let mut prev_rate =
-        BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into())
-            .checked_div(&million)
-            .expect("Unable to convert current exchange rate to microccd/euro");
+        BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into());
     log::debug!(
         "Loaded initial block summary, current exchange rate: {}/{}",
         initial_rate.numerator,
@@ -303,16 +287,18 @@ async fn main() -> anyhow::Result<()> {
         let rate = {
             let rates_lock = rates_mutex.lock().unwrap();
             match compute_median(&*rates_lock) {
-                Some(r) => r,
+                Some(r) => r * &million, /* multiply with 1000000 microCCD/CCD to convert the */
+                // unit to microCCD/Eur
                 None => {
                     log::error!("Unable to compute median for update");
                     continue;
                 }
             }
         }; // drop lock
-        log::debug!("Computed median: {}", rate);
+        log::debug!("Computed median: {} microCCD/Eur", rate);
 
-        // The rates used here are ccd/euro.
+        // Calculates the relative change from the prev_rate, which should be the
+        // current exchange rate on chain, and our proposed update:
         let diff = relative_change(&prev_rate, &rate);
         if rate > prev_rate {
             // Rate has increased
@@ -358,11 +344,12 @@ async fn main() -> anyhow::Result<()> {
         }
 
         // Convert the rate into an ExchangeRate (i.e. convert the bigints to u64's).
-        // Also multiplies with 1000000 microCCD/CCD
-        let new_rate = convert_big_fraction_to_exchange_rate(&rate * &million);
+        let new_rate = convert_big_fraction_to_exchange_rate(&rate);
         log::debug!("Converted new_rate: {:#?}", new_rate);
 
         if let Some(signer) = signer.as_ref() {
+            // Try to connect to a node, otherwise give up, and hope we can connect next
+            // time
             let node_client = match get_node_client(app.endpoint.clone(), &app.token).await {
                 Ok(client) => client,
                 Err(e) => {

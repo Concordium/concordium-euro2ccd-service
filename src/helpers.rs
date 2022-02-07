@@ -78,7 +78,7 @@ pub fn compute_median(rates: &VecDeque<BigRational>) -> Option<BigRational> {
  * 2. Divide the numerator and denominator each by 2.
  * Repeat until 1. succeeds.
  */
-pub fn convert_big_fraction_to_exchange_rate(target: BigRational) -> ExchangeRate {
+pub fn convert_big_fraction_to_exchange_rate(target: &BigRational) -> ExchangeRate {
     let mut numerator: BigInt = target.numer().clone();
     let mut denominator: BigInt = target.denom().clone();
     loop {
@@ -94,9 +94,10 @@ pub fn convert_big_fraction_to_exchange_rate(target: BigRational) -> ExchangeRat
     }
 }
 
-// AB: I don't understand this definition of relative difference.
-// The one I'd expect always has the current value as the reference value (i.e.,
-// in the denominator)
+/**
+ * Calculates the relative change from the current to the change, in
+ * percentages.
+ */
 pub fn relative_change(current: &BigRational, change: &BigRational) -> BigRational {
     if current > change {
         (current - change) * BigRational::from_integer(100.into()) / current
@@ -208,14 +209,14 @@ mod tests {
 
     fn test_convert_u64(num: u64, den: u64) {
         let result =
-            convert_big_fraction_to_exchange_rate(BigRational::new(num.into(), den.into()));
+            convert_big_fraction_to_exchange_rate(&BigRational::new(num.into(), den.into()));
         assert_eq!(num, result.numerator);
         assert_eq!(den, result.denominator);
     }
 
     fn test_convert_u128(num: u128, den: u128) {
         let input = BigRational::new(num.into(), den.into());
-        let result = convert_big_fraction_to_exchange_rate(input.clone());
+        let result = convert_big_fraction_to_exchange_rate(&input);
         assert!(
             (input - BigRational::new(result.numerator.into(), result.denominator.into())).abs()
                 < BigRational::new(1.into(), 100000000u64.into())
