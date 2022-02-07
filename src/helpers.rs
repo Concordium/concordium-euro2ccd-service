@@ -95,9 +95,10 @@ fn get_closest(low: ExchangeRate, high: ExchangeRate, target: BigRational) -> Ex
  * within epsilon of the target. If we unable to represent the next mediant
  * with u64, then we abort and return the limit closest to the target.
  */
+// TODO: This is a very slow process.
 pub fn convert_big_fraction_to_exchange_rate(
     target: BigRational,
-    epsilon: BigRational,
+    epsilon: &BigRational,
 ) -> ExchangeRate {
     // Check if the bigints can fit into u64's.
     if let (Some(p), Some(q)) = (target.numer().to_u64(), target.denom().to_u64()) {
@@ -108,7 +109,6 @@ pub fn convert_big_fraction_to_exchange_rate(
     };
 
     // Otherwise use "Stern-Brocot approximation":
-    let mut mediant: ExchangeRate;
     let mut low = ExchangeRate {
         numerator:   0,
         denominator: 1,
@@ -117,6 +117,8 @@ pub fn convert_big_fraction_to_exchange_rate(
         numerator:   1,
         denominator: 0,
     };
+    let mut prev_mediant = low;
+    let mut mediant: ExchangeRate;
     loop {
         let mediant_numer = low.numerator.checked_add(high.numerator);
         let mediant_denom = low.denominator.checked_add(high.denominator);
@@ -125,24 +127,30 @@ pub fn convert_big_fraction_to_exchange_rate(
                 numerator:   n,
                 denominator: d,
             },
-            (_, _) => return get_closest(low, high, target),
+            (_, _) => {
+                return prev_mediant;
+            }
         };
         let big_mediant = BigRational::new(mediant.numerator.into(), mediant.denominator.into());
-        if (&big_mediant - &target).abs() <= epsilon {
+        if &(&big_mediant - &target).abs() <= epsilon {
             return mediant;
         } else if big_mediant > target {
-            high = mediant
+            high = mediant;
         } else {
-            low = mediant
+            low = mediant;
         }
+        prev_mediant = mediant;
     }
 }
 
+// AB: I don't understand this definition of relative difference.
+// The one I'd expect always has the current value as the reference value (i.e.,
+// in the denominator)
 pub fn relative_difference(a: &BigRational, b: &BigRational) -> BigRational {
     if a > b {
         (a - b) * BigRational::from_integer(100.into()) / b
     } else {
-        (b - a) * BigRational::from_integer(100.into()) / a
+        (b - a) * BigRational::from_integer(100.into()) / b
     }
 }
 

@@ -46,9 +46,7 @@ struct App {
         long = "secret-names",
         help = "Secret names on AWS to get govenance keys from.",
         env = "EUR2CCD_SERVICE_SECRET_NAMES",
-        use_delimiter = true,
-        required_unless = "local-keys",
-        conflicts_with = "local-keys"
+        use_delimiter = true
     )]
     secret_names: Vec<String>,
     #[structopt(
@@ -107,8 +105,8 @@ struct App {
     #[structopt(
         long = "halt-threshold",
         default_value = "100",
-        help = "Determines the threshold where an update triggers a warning (relative difference \
-                in percentage)",
+        help = "Determines the threshold where an update triggers a halt (relative difference in \
+                percentage)",
         env = "EUR2CCD_SERVICE_HALT_THRESHOLD"
     )]
     halt_threshold: u8,
@@ -148,6 +146,12 @@ struct App {
         env = "EUR2CCD_SERVICE_LOCAL_KEYS"
     )]
     local_keys: Vec<PathBuf>,
+    #[structopt(
+        long = "dry-run",
+        help = "Do not perform updates, only log the update that would be performed.",
+        env = "EUR2CCD_DRY_RUN"
+    )]
+    dry_run: bool,
 }
 
 /// This main program loop.
@@ -172,11 +176,11 @@ async fn main() -> anyhow::Result<()> {
     // (Stop if error occurs)
 
     let mut log_builder = env_logger::Builder::new();
-    // only log the current module (main).
+
     log_builder.filter_module(module_path!(), app.log_level);
     log_builder.init();
 
-    log::debug!("Starting with configuration {:?}", app);
+    log::debug!("Starting with configuration {:#?}", app);
 
     let node_client = endpoints::Client::connect(app.endpoint, app.token)
         .await
@@ -189,8 +193,8 @@ async fn main() -> anyhow::Result<()> {
         );
         bail!("Error during startup");
     }
-    if !(1..=99).contains(&app.halt_threshold) {
-        log::error!("Halt threshold outside of allowed range (1-99): {} ", app.halt_threshold);
+    if !(1..=100).contains(&app.halt_threshold) {
+        log::error!("Halt threshold outside of allowed range (1-100): {} ", app.halt_threshold);
         bail!("Error during startup");
     }
     if app.halt_threshold <= app.warning_threshold {
@@ -199,7 +203,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let warning_threshold = BigRational::from_integer(app.warning_threshold.into());
-    let halt_threshold = BigRational::from_integer(app.warning_threshold.into());
+    let halt_threshold = BigRational::from_integer(app.halt_threshold.into());
 
     let (registry, stats) =
         prometheus::initialize().await.context("Failed to start the prometheus server.")?;
@@ -211,7 +215,11 @@ async fn main() -> anyhow::Result<()> {
     let initial_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
     let mut prev_rate =
         BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into());
-    log::debug!("Loaded initial block summary, current exchange rate: {:#?}", initial_rate);
+    log::debug!(
+        "Loaded initial block summary, current exchange rate: {}/{}",
+        initial_rate.numerator,
+        initial_rate.denominator
+    );
 
     let exchange = match app.test_exchange {
         Some(url) => Exchange::Test(url),
@@ -230,15 +238,22 @@ async fn main() -> anyhow::Result<()> {
         app.max_rates_saved,
     ));
 
-    let secret_keys = if app.local_keys.is_empty() {
-        get_governance_from_aws(app.region, app.secret_names).await
+    let signer = if app.dry_run {
+        None
     } else {
-        get_governance_from_file(&app.local_keys)
-    }
-    .context("Could not obtain keys.")?;
-
-    let signer = get_signer(secret_keys, &summary)?;
-    log::debug!("keys loaded");
+        let secret_keys = if app.local_keys.is_empty() {
+            anyhow::ensure!(
+                !app.secret_names.is_empty(),
+                "If `dry-run` is not used then one of `secret-names` and `local-keys` must be \
+                 provided."
+            );
+            get_governance_from_aws(app.region, app.secret_names).await
+        } else {
+            get_governance_from_file(&app.local_keys)
+        }
+        .context("Could not obtain keys.")?;
+        Some(get_signer(secret_keys, &summary).context("Failed to obtain keys.")?)
+    };
 
     let update_interval_duration = Duration::from_secs(app.update_interval.into());
     let mut interval =
@@ -265,67 +280,76 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }; // drop lock
-        log::debug!("Computed median: {:#?}", rate);
+        log::debug!("Computed median: {}", rate);
 
+        // TODO: SHouldn't this be comparing actual rates, not ones off by a million?
         let diff = relative_difference(&rate, &prev_rate);
         if diff > halt_threshold {
             log::error!(
-                "New update violates halt threshold, changing from {} to {} has {} % relative \
+                "New update violates halt threshold, changing from {} to {} has ~{} % relative \
                  difference",
                 prev_rate,
                 rate,
-                diff
+                diff.round()
             );
             bail!("Halt threshold violated");
         } else if diff > warning_threshold {
             log::warn!(
-                "New update violates warning threshold, changing from {} to {} has {} % relative \
+                "New update violates warning threshold, changing from {} to {} has ~{} % relative \
                  difference",
                 prev_rate,
                 rate,
-                diff
+                diff.round()
             );
         }
 
         // Convert the rate into an ExchangeRate (i.e. convert the bigints to u64's).
         // Also multiplies with 1000000 microCCD/CCD
         let new_rate =
-            convert_big_fraction_to_exchange_rate(&rate * &million, conversion_threshold.clone());
+            convert_big_fraction_to_exchange_rate(&rate * &million, &conversion_threshold);
         log::debug!("Converted new_rate: {:#?}", new_rate);
 
-        let (submission_id, new_seq_number) =
-            send_update(&stats, seq_number, &signer, new_rate, node_client.clone()).await;
-        log::info!("Sent update with submission id: {}", submission_id);
+        if let Some(signer) = signer.as_ref() {
+            let (submission_id, new_seq_number) =
+                send_update(&stats, seq_number, &signer, new_rate, node_client.clone()).await;
+            log::info!("Sent update with submission id: {}", submission_id);
 
-        match timeout(
-            Duration::from_secs(MAX_TIME_CHECK_SUBMISSION),
-            check_update_status(submission_id, node_client.clone()),
-        )
-        .await
-        {
-            Ok(submission_result) => {
-                // if we failed to submit, or to query, we retry with the same sequence number.
-                // if the previous transaction is already finalized this submission will fail,
-                // and send_update will retry with a new sequence number.
-                if let Err(e) = submission_result {
-                    log::error!("Could not query submission status: {}.", e);
-                } else {
-                    // new_seq_number is the sequence number, which was used to successfully send
-                    // the update.
-                    seq_number = new_seq_number.next();
-                    prev_rate = rate;
-                    log::info!(
-                        "Succesfully updated exchange rate to: {:#?} microCCD/CCD, with id {}",
-                        new_rate,
-                        submission_id
-                    );
+            match timeout(
+                Duration::from_secs(MAX_TIME_CHECK_SUBMISSION),
+                check_update_status(submission_id, node_client.clone()),
+            )
+            .await
+            {
+                Ok(submission_result) => {
+                    // if we failed to submit, or to query, we retry with the same sequence number.
+                    // if the previous transaction is already finalized this submission will fail,
+                    // and send_update will retry with a new sequence number.
+                    if let Err(e) = submission_result {
+                        log::error!("Could not query submission status: {}.", e);
+                    } else {
+                        // new_seq_number is the sequence number, which was used to successfully
+                        // send the update.
+                        seq_number = new_seq_number.next();
+                        prev_rate = rate;
+                        log::info!(
+                            "Succesfully updated exchange rate to: {:#?} microCCD/CCD, with id {}",
+                            new_rate,
+                            submission_id
+                        );
+                    }
                 }
-            }
-            Err(e) => log::error!(
-                "Was unable to confirm update with id {} within allocated timeframe due to: {}",
-                submission_id,
-                e
-            ),
-        };
+                Err(e) => log::error!(
+                    "Was unable to confirm update with id {} within allocated timeframe due to: {}",
+                    submission_id,
+                    e
+                ),
+            };
+        } else {
+            log::info!(
+                "Dry run enabled, so skipping the update. New rate: {}/{}",
+                new_rate.numerator,
+                new_rate.denominator
+            );
+        }
     }
 }

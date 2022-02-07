@@ -19,7 +19,9 @@ Explainations of all parameters can be seen by using the help flag, i.e. `cargo 
 - `node` (environment variable: `EUR2CCD_SERVICE_NODE`): the ip and port of the node, to pull data from and to send the chain updates to (ex. http://localhost:10000).
 - `log-level` (environment variable: `EUR2CCD_SERVICE_LOG_LEVEL`): determines the log level, defaults to outputting info messages (and higher priorities).
 - `prometheus-port` (environment variable: `EUR2CCD_SERVICE_PROMETHEUS_PORT`): Port at which prometheus is served.
-- `test` (environment variable: `EUR2CCD_SERVICE_TEST`): allows test settings (currently test-exchange  and local-keys).
+- `dry-run` (environment variable: `EUR2CCD_DRY_RUN`): Configures the service to only poll and compute the updates it would have done
+  without performing them. Instead they are logged at INFO level.
+- `test` (environment variable: `EUR2CCD_SERVICE_TEST`): allows test settings (currently test-exchange).
 
 Other parameters:
 `max-deviation`, `pull-exchange-interval`,  `rpc-token`, `update-interval`, `conversion_threshold_denominator`.
