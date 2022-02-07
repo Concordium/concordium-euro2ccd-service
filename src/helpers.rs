@@ -1,9 +1,10 @@
 use concordium_rust_sdk::types::{BlockSummary, ExchangeRate, UpdateKeysIndex};
 use crypto_common::{base16_encode_string, types::KeyPair};
+use num_bigint::BigInt;
 use num_integer::Integer;
 use num_rational::BigRational;
-use num_traits::{CheckedDiv, Signed, ToPrimitive, Zero};
-use std::collections::VecDeque;
+use num_traits::{CheckedDiv, ToPrimitive, Zero};
+use std::{collections::VecDeque, ops::Div};
 
 /**
  * Given keypairs and a BlockSummary, find the corresponding index for each
@@ -74,55 +75,22 @@ pub fn compute_median(rates: &VecDeque<BigRational>) -> Option<BigRational> {
  * Convert a BigRational type into an exchange rate.
  * 1. Check if the BigRational can be translated directly (both bigints are
  * u64)
- * 2. Traverse the Stern-Brocot tree until we reach a fraction which is
- * within epsilon of the target. If we unable to represent the next mediant
- * with u64, then we abort and return the limit closest to the target.
+ * 2. Divide the numerator and denominator each by 2.
+ * Repeat until 1. succeeds.
  */
-// TODO: This is a very slow process.
-pub fn convert_big_fraction_to_exchange_rate(
-    target: BigRational,
-    epsilon: &BigRational,
-) -> ExchangeRate {
-    // Check if the bigints can fit into u64's.
-    if let (Some(p), Some(q)) = (target.numer().to_u64(), target.denom().to_u64()) {
-        return ExchangeRate {
-            numerator:   p,
-            denominator: q,
-        };
-    };
-
-    // Otherwise use "Stern-Brocot approximation":
-    let mut low = ExchangeRate {
-        numerator:   0,
-        denominator: 1,
-    };
-    let mut high = ExchangeRate {
-        numerator:   1,
-        denominator: 0,
-    };
-    let mut prev_mediant = low;
-    let mut mediant: ExchangeRate;
+pub fn convert_big_fraction_to_exchange_rate(target: BigRational) -> ExchangeRate {
+    let mut numerator: BigInt = target.numer().clone();
+    let mut denominator: BigInt = target.denom().clone();
     loop {
-        let mediant_numer = low.numerator.checked_add(high.numerator);
-        let mediant_denom = low.denominator.checked_add(high.denominator);
-        mediant = match (mediant_numer, mediant_denom) {
-            (Some(n), Some(d)) => ExchangeRate {
-                numerator:   n,
-                denominator: d,
-            },
-            (_, _) => {
-                return prev_mediant;
-            }
+        // Check if the bigints can fit into u64's.
+        if let (Some(p), Some(q)) = (numerator.to_u64(), denominator.to_u64()) {
+            return ExchangeRate {
+                numerator:   p,
+                denominator: q,
+            };
         };
-        let big_mediant = BigRational::new(mediant.numerator.into(), mediant.denominator.into());
-        if &(&big_mediant - &target).abs() <= epsilon {
-            return mediant;
-        } else if big_mediant > target {
-            high = mediant;
-        } else {
-            low = mediant;
-        }
-        prev_mediant = mediant;
+        numerator = numerator.div(2);
+        denominator = denominator.div(2);
     }
 }
 
@@ -140,6 +108,7 @@ pub fn relative_change(current: &BigRational, change: &BigRational) -> BigRation
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_traits::Signed;
 
     #[test]
     fn test_compute_average() {
@@ -238,21 +207,19 @@ mod tests {
     }
 
     fn test_convert_u64(num: u64, den: u64) {
-        let result = convert_big_fraction_to_exchange_rate(
-            BigRational::new(num.into(), den.into()),
-            &BigRational::new(1.into(), 1000000000000u64.into()),
-        );
+        let result =
+            convert_big_fraction_to_exchange_rate(BigRational::new(num.into(), den.into()));
         assert_eq!(num, result.numerator);
         assert_eq!(den, result.denominator);
     }
 
-    fn test_convert_u128(num: u128, den: u128, res_num: u64, res_den: u64) {
-        let result = convert_big_fraction_to_exchange_rate(
-            BigRational::new(num.into(), den.into()),
-            &BigRational::new(1.into(), 1000000000000u64.into()),
+    fn test_convert_u128(num: u128, den: u128) {
+        let input = BigRational::new(num.into(), den.into());
+        let result = convert_big_fraction_to_exchange_rate(input.clone());
+        assert!(
+            (input - BigRational::new(result.numerator.into(), result.denominator.into())).abs()
+                < BigRational::new(1.into(), 100000000u64.into())
         );
-        assert_eq!(res_num, result.numerator);
-        assert_eq!(res_den, result.denominator);
     }
 
     #[test]
@@ -272,8 +239,6 @@ mod tests {
         test_convert_u128(
             100000000000000000000000000000000000u128,
             200000000000000000000000000000000001u128,
-            1,
-            2,
         );
     }
 
@@ -282,28 +247,16 @@ mod tests {
         test_convert_u128(
             6730672262010705765392518838235123u128,
             12417307353238580889556877312u128,
-            444549438399,
-            820142,
         );
     }
 
     #[test]
     fn test_convert_128_3() {
-        test_convert_u128(
-            78784731800983935460904371u128,
-            57712362587357708288u128,
-            865205507352,
-            633791,
-        );
+        test_convert_u128(78784731800983935460904371u128, 57712362587357708288u128);
     }
 
     #[test]
     fn test_convert_128_4() {
-        test_convert_u128(
-            96961673726254741664712289u128,
-            64926407910777421824u128,
-            2905555397391,
-            1945586,
-        );
+        test_convert_u128(96961673726254741664712289u128, 64926407910777421824u128);
     }
 }

@@ -70,14 +70,6 @@ struct App {
     )]
     pull_interval: u32,
     #[structopt(
-        long = "conversion_threshold_denominator",
-        help = "Denominator for fraction that determines how far exchange rate can deviate from \
-                actual (bigint) value. (the numerator is 1)",
-        env = "EUR2CCD_SERVICE_CONVERSION_THRESHOLD_DENOMINATOR",
-        default_value = "1000000000000"
-    )]
-    conversion_threshold_denominator: u64,
-    #[structopt(
         long = "log-level",
         default_value = "info",
         help = "Maximum log level.",
@@ -293,8 +285,6 @@ async fn main() -> anyhow::Result<()> {
     let mut interval =
         interval_at(Instant::now() + update_interval_duration, update_interval_duration);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let conversion_threshold =
-        BigRational::new(1.into(), app.conversion_threshold_denominator.into());
 
     // Main Loop
     // Log errors, and move on
@@ -363,8 +353,7 @@ async fn main() -> anyhow::Result<()> {
 
         // Convert the rate into an ExchangeRate (i.e. convert the bigints to u64's).
         // Also multiplies with 1000000 microCCD/CCD
-        let new_rate =
-            convert_big_fraction_to_exchange_rate(&rate * &million, &conversion_threshold);
+        let new_rate = convert_big_fraction_to_exchange_rate(&rate * &million);
         log::debug!("Converted new_rate: {:#?}", new_rate);
 
         if let Some(signer) = signer.as_ref() {
