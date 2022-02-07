@@ -12,7 +12,7 @@ use concordium_rust_sdk::endpoints;
 use config::MAX_TIME_CHECK_SUBMISSION;
 use exchanges::{pull_exchange_rate, Exchange};
 use helpers::{
-    compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_difference,
+    compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_change,
 };
 use node::{check_update_status, get_block_summary, send_update};
 use num_rational::BigRational;
@@ -96,21 +96,33 @@ struct App {
     )]
     log_level: log::LevelFilter,
     #[structopt(
-        long = "warning-threshold",
+        long = "warning-increase-threshold",
         default_value = "30",
-        help = "Determines the threshold where an update triggers a warning (relative difference \
-                in percentage)",
-        env = "EUR2CCD_SERVICE_WARNING_THRESHOLD"
+        help = "Determines the threshold where an update increasing the exchange rate triggers a warning (specified in percentage)",
+        env = "EUR2CCD_SERVICE_WARNING_INCREASE_THRESHOLD"
     )]
-    warning_threshold: u8,
+    warning_increase_threshold: u8,
     #[structopt(
-        long = "halt-threshold",
+        long = "halt-increase-threshold",
         default_value = "100",
-        help = "Determines the threshold where an update triggers a halt (relative difference in \
-                percentage)",
-        env = "EUR2CCD_SERVICE_HALT_THRESHOLD"
+        help = "Determines the threshold where an update increasing the exchange rate triggers a halt (specified in percentage)",
+        env = "EUR2CCD_SERVICE_HALT_INCREASE_THRESHOLD"
     )]
-    halt_threshold: u8,
+    halt_increase_threshold: u8,
+    #[structopt(
+        long = "warning-decrease-threshold",
+        default_value = "15",
+        help = "Determines the threshold where an update decreasing the exchange rate triggers a warning (specified in percentage)",
+        env = "EUR2CCD_SERVICE_WARNING_DECREASE_THRESHOLD"
+    )]
+    warning_decrease_threshold: u8,
+    #[structopt(
+        long = "halt-decrease-threshold",
+        default_value = "50",
+        help = "Determines the threshold where an update decreasing the exchange rate triggers a halt (specified in percentage)",
+        env = "EUR2CCD_SERVICE_HALT_DECREASE_THRESHOLD"
+    )]
+    halt_decrease_threshold: u8,
     #[structopt(
         long = "prometheus-port",
         default_value = "8112",
@@ -187,26 +199,45 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("Could not connect to the node.")?;
 
-    if !(1..=99).contains(&app.warning_threshold) {
+    if !(1..=99).contains(&app.warning_increase_threshold) {
         log::error!(
-            "Warning threshold outside of allowed range (1-99): {} ",
-            app.warning_threshold
+            "Warning threshold (increase) outside of allowed range (1-99): {} ",
+            app.warning_increase_threshold
         );
         bail!("Error during startup");
     }
-    if !(1..=100).contains(&app.halt_threshold) {
-        log::error!("Halt threshold outside of allowed range (1-100): {} ", app.halt_threshold);
+    if !(1..=100).contains(&app.halt_increase_threshold) {
+        log::error!("Halt threshold (increase) outside of allowed range (1-100): {} ", app.halt_increase_threshold);
         bail!("Error during startup");
     }
-    if app.halt_threshold <= app.warning_threshold {
-        log::error!("Warning threshold must be lower than halt threshold");
+    if app.halt_increase_threshold <= app.warning_increase_threshold {
+        log::error!("Warning threshold must be lower than halt threshold (increase)");
         bail!("Error during startup");
     }
+
+    if !(1..=98).contains(&app.warning_decrease_threshold) {
+        log::error!(
+            "Warning threshold (decrease) outside of allowed range (1-98): {} ",
+            app.warning_decrease_threshold
+        );
+        bail!("Error during startup");
+    }
+    if !(1..=99).contains(&app.halt_decrease_threshold) {
+        log::error!("Halt threshold (decrease) outside of allowed range (1-99): {} ", app.halt_decrease_threshold);
+        bail!("Error during startup");
+    }
+    if app.halt_decrease_threshold <= app.warning_decrease_threshold {
+        log::error!("Warning threshold must be lower than halt threshold (decrease)");
+        bail!("Error during startup");
+    }
+
 
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
 
-    let warning_threshold = BigRational::from_integer(app.warning_threshold.into());
-    let halt_threshold = BigRational::from_integer(app.halt_threshold.into());
+    let warning_increase_threshold = BigRational::from_integer(app.warning_increase_threshold.into());
+    let halt_increase_threshold = BigRational::from_integer(app.halt_increase_threshold.into());
+    let warning_decrease_threshold = BigRational::from_integer(app.warning_decrease_threshold.into());
+    let halt_decrease_threshold = BigRational::from_integer(app.halt_decrease_threshold.into());
 
     let (registry, stats) =
         prometheus::initialize().await.context("Failed to start the prometheus server.")?;
@@ -283,25 +314,44 @@ async fn main() -> anyhow::Result<()> {
         }; // drop lock
         log::debug!("Computed median: {}", rate);
 
-        // TODO: SHouldn't this be comparing actual rates, not ones off by a million?
-        let diff = relative_difference(&rate, &prev_rate);
-        if diff > halt_threshold {
-            log::error!(
-                "New update violates halt threshold, changing from {} to {} has ~{} % relative \
-                 difference",
-                prev_rate,
-                rate,
-                diff.round()
-            );
-            bail!("Halt threshold violated");
-        } else if diff > warning_threshold {
-            log::warn!(
-                "New update violates warning threshold, changing from {} to {} has ~{} % relative \
-                 difference",
-                prev_rate,
-                rate,
-                diff.round()
-            );
+        // The rates used here are ccd/euro.
+        let diff = relative_change(&prev_rate, &rate);
+        if rate > prev_rate {
+            // Rate has increased
+            if diff > halt_increase_threshold {
+                log::error!(
+                    "New update violates halt threshold, changing from {} to {} is an ~{} % increase",
+                    prev_rate,
+                    rate,
+                    diff.round()
+                );
+                bail!("Halt threshold violated");
+            } else if diff > warning_increase_threshold {
+                log::warn!(
+                    "New update violates warning threshold, changing from {} to {} has ~{} % increase",
+                    prev_rate,
+                    rate,
+                    diff.round()
+                );
+            }
+        } else {
+            // Rate has decreased
+            if diff > halt_decrease_threshold {
+                log::error!(
+                    "New update violates halt threshold, changing from {} to {} has ~{} % decrease",
+                    prev_rate,
+                    rate,
+                    diff.round()
+                );
+                bail!("Halt threshold violated");
+            } else if diff > warning_decrease_threshold {
+                log::warn!(
+                    "New update violates warning threshold, changing from {} to {} has ~{} % decrease",
+                    prev_rate,
+                    rate,
+                    diff.round()
+                );
+            }
         }
 
         // Convert the rate into an ExchangeRate (i.e. convert the bigints to u64's).

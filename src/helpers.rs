@@ -2,7 +2,7 @@ use concordium_rust_sdk::types::{BlockSummary, ExchangeRate, UpdateKeysIndex};
 use crypto_common::{base16_encode_string, types::KeyPair};
 use num_integer::Integer;
 use num_rational::BigRational;
-use num_traits::{CheckedDiv, CheckedSub, Signed, ToPrimitive, Zero};
+use num_traits::{CheckedDiv, Signed, ToPrimitive, Zero};
 use std::collections::VecDeque;
 
 /**
@@ -129,11 +129,11 @@ pub fn convert_big_fraction_to_exchange_rate(
 // AB: I don't understand this definition of relative difference.
 // The one I'd expect always has the current value as the reference value (i.e.,
 // in the denominator)
-pub fn relative_difference(a: &BigRational, b: &BigRational) -> BigRational {
-    if a > b {
-        (a - b) * BigRational::from_integer(100.into()) / b
+pub fn relative_change(current: &BigRational, change: &BigRational) -> BigRational {
+    if current > change {
+        (current - change) * BigRational::from_integer(100.into()) / current
     } else {
-        (b - a) * BigRational::from_integer(100.into()) / b
+        (change - current) * BigRational::from_integer(100.into()) / current
     }
 }
 
@@ -153,55 +153,55 @@ mod tests {
     }
 
     #[test]
-    fn test_relative_diff() {
+    fn test_relative_change() {
         assert_eq!(
-            relative_difference(
+            relative_change(
                 &BigRational::from_integer(50.into()),
                 &BigRational::from_integer(40.into())
             ),
-            BigRational::from_integer(25.into())
+            BigRational::from_integer(20.into())
         );
         assert_eq!(
-            relative_difference(
+            relative_change(
                 &BigRational::from_integer(50.into()),
                 &BigRational::from_integer(30.into())
             ),
-            BigRational::from_integer(66.into())
+            BigRational::from_integer(40.into())
         );
         assert_eq!(
-            relative_difference(
+            relative_change(
                 &BigRational::from_integer(50.into()),
                 &BigRational::from_integer(75.into())
             ),
             BigRational::from_integer(50.into())
         );
         assert_eq!(
-            relative_difference(
+            relative_change(
                 &BigRational::from_integer(100.into()),
                 &BigRational::from_integer(50.into())
             ),
-            BigRational::from_integer(100.into())
+            BigRational::from_integer(50.into())
         );
         assert_eq!(
-            relative_difference(
+            relative_change(
                 &BigRational::from_integer(50.into()),
                 &BigRational::from_integer(100.into())
             ),
             BigRational::from_integer(100.into())
         );
         assert_eq!(
-            relative_difference(
+            relative_change(
                 &BigRational::from_integer(100.into()),
                 &BigRational::from_integer(200.into())
             ),
             BigRational::from_integer(100.into())
         );
         assert_eq!(
-            relative_difference(
+            relative_change(
                 &BigRational::from_integer(200.into()),
                 &BigRational::from_integer(100.into())
             ),
-            BigRational::from_integer(100.into())
+            BigRational::from_integer(50.into())
         );
     }
 
