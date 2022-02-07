@@ -10,11 +10,10 @@ use clap::AppSettings;
 use concordium_rust_sdk::endpoints;
 use config::MAX_TIME_CHECK_SUBMISSION;
 use exchanges::{pull_exchange_rate, Exchange};
-use helpers::{
-    compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_change,
-};
+use helpers::{compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_change};
 use node::{check_update_status, get_block_summary, send_update};
 use num_rational::BigRational;
+use num_traits::CheckedDiv;
 use reqwest::Url;
 use secretsmanager::{get_governance_from_aws, get_governance_from_file};
 use std::{
@@ -24,7 +23,6 @@ use std::{
 };
 use structopt::StructOpt;
 use tokio::time::{interval_at, timeout, Duration, Instant};
-use num_traits::CheckedDiv;
 
 #[derive(StructOpt, Debug)]
 struct App {
@@ -89,28 +87,32 @@ struct App {
     #[structopt(
         long = "warning-increase-threshold",
         default_value = "30",
-        help = "Determines the threshold where an update increasing the exchange rate triggers a warning (specified in percentage)",
+        help = "Determines the threshold where an update increasing the exchange rate triggers a \
+                warning (specified in percentage)",
         env = "EUR2CCD_SERVICE_WARNING_INCREASE_THRESHOLD"
     )]
     warning_increase_threshold: u8,
     #[structopt(
         long = "halt-increase-threshold",
         default_value = "100",
-        help = "Determines the threshold where an update increasing the exchange rate triggers a halt (specified in percentage)",
+        help = "Determines the threshold where an update increasing the exchange rate triggers a \
+                halt (specified in percentage)",
         env = "EUR2CCD_SERVICE_HALT_INCREASE_THRESHOLD"
     )]
     halt_increase_threshold: u8,
     #[structopt(
         long = "warning-decrease-threshold",
         default_value = "15",
-        help = "Determines the threshold where an update decreasing the exchange rate triggers a warning (specified in percentage)",
+        help = "Determines the threshold where an update decreasing the exchange rate triggers a \
+                warning (specified in percentage)",
         env = "EUR2CCD_SERVICE_WARNING_DECREASE_THRESHOLD"
     )]
     warning_decrease_threshold: u8,
     #[structopt(
         long = "halt-decrease-threshold",
         default_value = "50",
-        help = "Determines the threshold where an update decreasing the exchange rate triggers a halt (specified in percentage)",
+        help = "Determines the threshold where an update decreasing the exchange rate triggers a \
+                halt (specified in percentage)",
         env = "EUR2CCD_SERVICE_HALT_DECREASE_THRESHOLD"
     )]
     halt_decrease_threshold: u8,
@@ -198,7 +200,10 @@ async fn main() -> anyhow::Result<()> {
         bail!("Error during startup");
     }
     if !(1..=100).contains(&app.halt_increase_threshold) {
-        log::error!("Halt threshold (increase) outside of allowed range (1-100): {} ", app.halt_increase_threshold);
+        log::error!(
+            "Halt threshold (increase) outside of allowed range (1-100): {} ",
+            app.halt_increase_threshold
+        );
         bail!("Error during startup");
     }
     if app.halt_increase_threshold <= app.warning_increase_threshold {
@@ -214,7 +219,10 @@ async fn main() -> anyhow::Result<()> {
         bail!("Error during startup");
     }
     if !(1..=99).contains(&app.halt_decrease_threshold) {
-        log::error!("Halt threshold (decrease) outside of allowed range (1-99): {} ", app.halt_decrease_threshold);
+        log::error!(
+            "Halt threshold (decrease) outside of allowed range (1-99): {} ",
+            app.halt_decrease_threshold
+        );
         bail!("Error during startup");
     }
     if app.halt_decrease_threshold <= app.warning_decrease_threshold {
@@ -222,12 +230,13 @@ async fn main() -> anyhow::Result<()> {
         bail!("Error during startup");
     }
 
-
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
 
-    let warning_increase_threshold = BigRational::from_integer(app.warning_increase_threshold.into());
+    let warning_increase_threshold =
+        BigRational::from_integer(app.warning_increase_threshold.into());
     let halt_increase_threshold = BigRational::from_integer(app.halt_increase_threshold.into());
-    let warning_decrease_threshold = BigRational::from_integer(app.warning_decrease_threshold.into());
+    let warning_decrease_threshold =
+        BigRational::from_integer(app.warning_decrease_threshold.into());
     let halt_decrease_threshold = BigRational::from_integer(app.halt_decrease_threshold.into());
 
     let (registry, stats) =
@@ -238,7 +247,10 @@ async fn main() -> anyhow::Result<()> {
     let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
     let initial_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
-    let mut prev_rate = BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into()).checked_div(&million).expect("Unable to convert current exchange rate to microccd/euro");
+    let mut prev_rate =
+        BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into())
+            .checked_div(&million)
+            .expect("Unable to convert current exchange rate to microccd/euro");
     log::debug!(
         "Loaded initial block summary, current exchange rate: {}/{}",
         initial_rate.numerator,
@@ -249,7 +261,6 @@ async fn main() -> anyhow::Result<()> {
         Some(url) => Exchange::Test(url),
         None => Exchange::Bitfinex,
     };
-
 
     let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(app.max_rates_saved)));
 
@@ -311,7 +322,8 @@ async fn main() -> anyhow::Result<()> {
             // Rate has increased
             if diff > halt_increase_threshold {
                 log::error!(
-                    "New update violates halt threshold, changing from {} to {} is an ~{} % increase",
+                    "New update violates halt threshold, changing from {} to {} is an ~{} % \
+                     increase",
                     prev_rate,
                     rate,
                     diff.round()
@@ -319,11 +331,13 @@ async fn main() -> anyhow::Result<()> {
                 bail!("Halt threshold violated");
             } else if diff > warning_increase_threshold {
                 log::warn!(
-                    "New update violates warning threshold, changing from {} to {} has ~{} % increase",
+                    "New update violates warning threshold, changing from {} to {} has ~{} % \
+                     increase",
                     prev_rate,
                     rate,
                     diff.round()
                 );
+                stats.increment_warning_threshold_violations();
             }
         } else {
             // Rate has decreased
@@ -337,11 +351,13 @@ async fn main() -> anyhow::Result<()> {
                 bail!("Halt threshold violated");
             } else if diff > warning_decrease_threshold {
                 log::warn!(
-                    "New update violates warning threshold, changing from {} to {} has ~{} % decrease",
+                    "New update violates warning threshold, changing from {} to {} has ~{} % \
+                     decrease",
                     prev_rate,
                     rate,
                     diff.round()
                 );
+                stats.increment_warning_threshold_violations();
             }
         }
 
@@ -372,6 +388,7 @@ async fn main() -> anyhow::Result<()> {
                         // new_seq_number is the sequence number, which was used to successfully
                         // send the update.
                         seq_number = new_seq_number.next();
+                        stats.update_updated_rate(&rate);
                         prev_rate = rate;
                         log::info!(
                             "Succesfully updated exchange rate to: {:#?} microCCD/CCD, with id {}",

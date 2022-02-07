@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use num_rational::BigRational;
+use num_traits::ToPrimitive;
 use prometheus::{Encoder, Gauge, IntCounter, IntGauge, Registry, TextEncoder};
 use warp::{http::StatusCode, Filter};
 
@@ -29,15 +31,28 @@ pub async fn serve_prometheus(registry: Registry, port: u16) {
 
 #[derive(Debug, Clone)]
 pub struct Stats {
-    exchange_rate:   Gauge,
-    dropped_times:   IntCounter,
+    /// The last exchange rate read from bitfinex.
+    exchange_rate_read:           Gauge,
+    /// The last exchange rate read from bitfinex.
+    exchange_rate_updated:        Gauge,
+    /// Number of times an update has been outside the warning threshold.
+    warning_threshold_violations: IntCounter,
     /// Number of times we failed to submit an update.
     /// Resets to 0 upon successful submission.
-    update_attempts: IntGauge,
+    update_attempts:              IntGauge,
 }
 
 impl Stats {
-    pub fn update_rate(&self, rate: f64) { self.exchange_rate.set(rate) }
+    pub fn update_read_rate(&self, rate: f64) { self.exchange_rate_read.set(rate) }
+
+    pub fn update_updated_rate(&self, rate: &BigRational) {
+        match rate.to_f64() {
+            Some(f) => self.exchange_rate_updated.set(f),
+            None => log::warn!("Unable to convert updated rate to float for Prometheus"),
+        }
+    }
+
+    pub fn increment_warning_threshold_violations(&self) { self.warning_threshold_violations.inc() }
 
     pub fn increment_update_attempts(&self) { self.update_attempts.inc() }
 
@@ -46,17 +61,22 @@ impl Stats {
 
 pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
     let registry = Registry::new();
-    let exchange_rate = Gauge::new("exchange_rate", "Last polled exchange rate.")?;
-    let dropped_times =
-        IntCounter::new("rates_bounded", "amount of times exchange rate has been bounded")?;
+    let exchange_rate_read = Gauge::new("exchange_rate_read", "Last polled exchange rate.")?;
+    let exchange_rate_updated = Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?;
+    let warning_threshold_violations = IntCounter::new(
+        "warning_threshold_violations",
+        "amount of times an update has been outside the warning threshold",
+    )?;
     let update_attempts =
         IntGauge::new("failed_submissions", "amount of times submitting an update has failed")?;
-    registry.register(Box::new(exchange_rate.clone()))?;
-    registry.register(Box::new(dropped_times.clone()))?;
+    registry.register(Box::new(exchange_rate_read.clone()))?;
+    registry.register(Box::new(exchange_rate_updated.clone()))?;
+    registry.register(Box::new(warning_threshold_violations.clone()))?;
     registry.register(Box::new(update_attempts.clone()))?;
     Ok((registry, Stats {
-        exchange_rate,
-        dropped_times,
+        exchange_rate_read,
+        exchange_rate_updated,
+        warning_threshold_violations,
         update_attempts,
     }))
 }

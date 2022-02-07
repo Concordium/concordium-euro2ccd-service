@@ -156,7 +156,7 @@ async fn exchange_rate_getter<Fut>(
         };
 
         log::info!("New exchange rate polled: {:#?}", raw_rate);
-        stats.update_rate(raw_rate);
+        stats.update_read_rate(raw_rate);
 
         let rate = match BigRational::from_float(raw_rate) {
             Some(r) => r,
