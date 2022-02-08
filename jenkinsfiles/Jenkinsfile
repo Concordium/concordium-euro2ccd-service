@@ -1,7 +1,7 @@
 pipeline {
     agent any
     environment {
-        S3_BUCKET = "s3://euro2ccd.concordium.com"
+        S3_BUCKET = "s3://eur2ccd.concordium.com"
         PKG_FILE = "concordium-eur2ccd_${version}_amd64.deb"
         OUT_FILE = "concordium-eur2ccd_${version}-${build}_amd64.deb"
         OUT_PATH = "${S3_BUCKET}/${OUT_FILE}"
