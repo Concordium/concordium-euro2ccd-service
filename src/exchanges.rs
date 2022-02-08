@@ -59,7 +59,7 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
     let resp = match client.post(BITFINEX_URL).json(&params).send().await {
         Ok(o) => o,
         Err(e) => {
-            log::warn!("Unable to retrieve from bitfinex: {:#?}.", e);
+            log::warn!("Unable to retrieve from bitfinex: {:?}.", e);
             return None;
         }
     };
@@ -70,7 +70,7 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
         match resp.json::<Vec<f64>>().await {
             Ok(v) if v.len() == 1 => {
                 let raw_rate = v[0];
-                log::debug!("Raw exchange rate CCD/EUR polled from bitfinex: {:#?}", raw_rate);
+                log::debug!("Raw exchange rate CCD/EUR polled from bitfinex: {:?}", raw_rate);
                 return Some(raw_rate);
             }
             Ok(arr) => {
@@ -100,7 +100,7 @@ async fn request_exchange_rate_test(client: reqwest::Client, url: Url) -> Option
     let resp = match client.get(url.clone()).send().await {
         Ok(o) => o,
         Err(e) => {
-            log::warn!("Unable to retrieve from test exchange: {:#?}", e);
+            log::warn!("Unable to retrieve from test exchange: {:?}", e);
             return None;
         }
     };
@@ -108,7 +108,7 @@ async fn request_exchange_rate_test(client: reqwest::Client, url: Url) -> Option
         match resp.json::<Vec<f64>>().await {
             Ok(v) => {
                 let raw_rate = v[0];
-                log::debug!("Raw exchange rate CCD/EUR polled from test exchange: {:#?}", raw_rate);
+                log::debug!("Raw exchange rate CCD/EUR polled from test exchange: {:?}", raw_rate);
                 return Some(raw_rate);
             }
             Err(err) => {
@@ -155,7 +155,7 @@ async fn exchange_rate_getter<Fut>(
             None => continue,
         };
 
-        log::info!("New exchange rate polled: {:#?}", raw_rate);
+        log::info!("New exchange rate polled: {:?}", raw_rate);
         stats.update_read_rate(raw_rate);
 
         let rate = match BigRational::from_float(raw_rate) {

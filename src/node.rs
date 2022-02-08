@@ -60,7 +60,7 @@ pub async fn send_update(
             let new_summary = match get_block_summary(client.clone()).await {
                 Ok(o) => o,
                 Err(e) => {
-                    log::error!("Unable to pull new sequence number due to: {:#?}", e);
+                    log::error!("Unable to pull new sequence number due to: {}", e);
                     continue;
                 }
             };
@@ -76,7 +76,7 @@ pub async fn send_update(
             }
             Ok(false) => {
                 stats.increment_update_attempts();
-                log::error!("Sending update was rejected, id: {:#?}.", block_item.hash());
+                log::error!("Sending update was rejected, id: {}.", block_item.hash());
                 // We assume that the reason for rejection is an incorrect sequence number
                 // (because it is the only one we can solve)
                 get_new_seq_number = true;
@@ -87,7 +87,7 @@ pub async fn send_update(
                 // responds with this for different reasons and we cannot fully determine what
                 // we should do based on the status. If the node ever responds more precisely
                 // then we can revise this to be smarter about it.
-                log::error!("Error occurred while sending update: {:#?}", e);
+                log::error!("Error occurred while sending update: {}", e);
                 get_new_seq_number = true;
             }
         }

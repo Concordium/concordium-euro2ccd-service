@@ -27,7 +27,7 @@ use tokio::time::{interval_at, timeout, Duration, Instant};
 struct App {
     #[structopt(
         long = "node",
-        help = "location of the GRPC interface of the node(s).",
+        help = "Comma separated location(s) of the GRPC interface of the node(s).",
         default_value = "http://localhost:10000",
         use_delimiter = true,
         env = "EUR2CCD_SERVICE_NODE"
@@ -84,7 +84,7 @@ struct App {
                 warning (specified in percentage)",
         env = "EUR2CCD_SERVICE_WARNING_INCREASE_THRESHOLD"
     )]
-    warning_increase_threshold: u8,
+    warning_increase_threshold: u16,
     #[structopt(
         long = "halt-increase-threshold",
         default_value = "100",
@@ -92,7 +92,7 @@ struct App {
                 halt (specified in percentage)",
         env = "EUR2CCD_SERVICE_HALT_INCREASE_THRESHOLD"
     )]
-    halt_increase_threshold: u8,
+    halt_increase_threshold: u16,
     #[structopt(
         long = "warning-decrease-threshold",
         default_value = "15",
@@ -175,35 +175,13 @@ async fn main() -> anyhow::Result<()> {
 
     anyhow::ensure!(!app.endpoint.is_empty(), "At least one node must be provided.");
 
-    if !(1..=99).contains(&app.warning_increase_threshold) {
-        log::error!(
-            "Warning threshold (increase) outside of allowed range (1-99): {} ",
-            app.warning_increase_threshold
-        );
-        bail!("Error during startup");
-    }
-    if !(1..=100).contains(&app.halt_increase_threshold) {
-        log::error!(
-            "Halt threshold (increase) outside of allowed range (1-100): {} ",
-            app.halt_increase_threshold
-        );
-        bail!("Error during startup");
-    }
     if app.halt_increase_threshold <= app.warning_increase_threshold {
         log::error!("Warning threshold must be lower than halt threshold (increase)");
         bail!("Error during startup");
     }
-
-    if !(1..=98).contains(&app.warning_decrease_threshold) {
+    if !(1..=100).contains(&app.halt_decrease_threshold) {
         log::error!(
-            "Warning threshold (decrease) outside of allowed range (1-98): {} ",
-            app.warning_decrease_threshold
-        );
-        bail!("Error during startup");
-    }
-    if !(1..=99).contains(&app.halt_decrease_threshold) {
-        log::error!(
-            "Halt threshold (decrease) outside of allowed range (1-99): {} ",
+            "Halt threshold (decrease) outside of allowed range (1-100): {} ",
             app.halt_decrease_threshold
         );
         bail!("Error during startup");
@@ -234,9 +212,10 @@ async fn main() -> anyhow::Result<()> {
     let mut prev_rate =
         BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into());
     log::debug!(
-        "Loaded initial block summary, current exchange rate: {}/{}",
+        "Loaded initial block summary, current exchange rate: {}/{}  (~ {}) microCCD/EUR",
         initial_rate.numerator,
-        initial_rate.denominator
+        initial_rate.denominator,
+        initial_rate.numerator as f64 / initial_rate.denominator as f64
     );
 
     let exchange = match app.test_exchange {
@@ -345,7 +324,7 @@ async fn main() -> anyhow::Result<()> {
 
         // Convert the rate into an ExchangeRate (i.e. convert the bigints to u64's).
         let new_rate = convert_big_fraction_to_exchange_rate(&rate);
-        log::debug!("Converted new_rate: {:#?}", new_rate);
+        log::debug!("Converted new_rate: {:?}", new_rate);
 
         if let Some(signer) = signer.as_ref() {
             // Try to connect to a node, otherwise give up, and hope we can connect next
@@ -381,7 +360,7 @@ async fn main() -> anyhow::Result<()> {
                         stats.update_updated_rate(&rate);
                         prev_rate = rate;
                         log::info!(
-                            "Succesfully updated exchange rate to: {:#?} microCCD/CCD, with id {}",
+                            "Succesfully updated exchange rate to: {:?} microCCD/CCD, with id {}",
                             new_rate,
                             submission_id
                         );

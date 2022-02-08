@@ -4,7 +4,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_rational::BigRational;
 use num_traits::{CheckedDiv, ToPrimitive, Zero};
-use std::{collections::VecDeque, ops::Div};
+use std::collections::VecDeque;
 
 /**
  * Given keypairs and a BlockSummary, find the corresponding index for each
@@ -89,20 +89,20 @@ pub fn convert_big_fraction_to_exchange_rate(target: &BigRational) -> ExchangeRa
                 denominator: q,
             };
         };
-        numerator = numerator.div(2);
-        denominator = denominator.div(2);
+        numerator /= 2;
+        denominator /= 2;
     }
 }
 
 /**
- * Calculates the relative change from the current to the change, in
+ * Calculates the relative change from the current to the new, in
  * percentages.
  */
-pub fn relative_change(current: &BigRational, change: &BigRational) -> BigRational {
-    if current > change {
-        (current - change) * BigRational::from_integer(100.into()) / current
+pub fn relative_change(current: &BigRational, new: &BigRational) -> BigRational {
+    if current > new {
+        (current - new) * BigRational::from_integer(100.into()) / current
     } else {
-        (change - current) * BigRational::from_integer(100.into()) / current
+        (new - current) * BigRational::from_integer(100.into()) / current
     }
 }
 
