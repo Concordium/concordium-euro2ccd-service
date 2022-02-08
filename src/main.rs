@@ -171,7 +171,7 @@ async fn main() -> anyhow::Result<()> {
     log_builder.filter_module(module_path!(), app.log_level);
     log_builder.init();
 
-    log::debug!("Starting with configuration {:#?}", app);
+    log::debug!("Starting with configuration {:?}", app);
 
     anyhow::ensure!(!app.endpoint.is_empty(), "At least one node must be provided.");
 
