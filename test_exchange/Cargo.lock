@@ -190,8 +190,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "euro2ccd-service-local-exchange"
-version = "0.1.0"
+name = "euro2ccd-service-test-exchange"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
