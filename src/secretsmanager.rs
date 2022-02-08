@@ -20,9 +20,9 @@ pub async fn get_governance_from_aws(
             Some(s) => s,
             None => bail!("Secret string was not present"),
         };
-        let mut additional_keys = serde_json::from_str::<Vec<KeyPair>>(raw_secret)
+        let additional_key = serde_json::from_str::<KeyPair>(raw_secret)
             .context("Could not read keys from secret {}.")?;
-        kps.append(&mut additional_keys);
+        kps.push(additional_key);
     }
     Ok(kps)
 }
