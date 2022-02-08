@@ -2,7 +2,7 @@ use crate::{
     config::{CHECK_SUBMISSION_STATUS_INTERVAL, RETRY_SUBMISSION_INTERVAL, UPDATE_EXPIRY_OFFSET},
     prometheus::Stats,
 };
-use anyhow::{Context, Result};
+use anyhow::Context;
 use concordium_rust_sdk::{
     constants::DEFAULT_NETWORK_ID,
     endpoints,
@@ -16,7 +16,7 @@ use concordium_rust_sdk::{
 use crypto_common::types::{KeyPair, TransactionTime};
 use tokio::time::{interval, Duration};
 
-pub async fn get_block_summary(mut node_client: endpoints::Client) -> Result<BlockSummary> {
+pub async fn get_block_summary(mut node_client: endpoints::Client) -> anyhow::Result<BlockSummary> {
     let consensus_status = node_client
         .get_consensus_status()
         .await
@@ -42,13 +42,21 @@ fn construct_block_item(
     update::update(signer, seq_number, effective_time, timeout, payload).into()
 }
 
+/**
+ * Sends an microCCD per Euro update, with the given exchange rate.
+ * If it runs into issues, log the error and try again.
+ * If the given node is not responding, then return None.
+ * The given sequence number will be used initially, but a new one will be
+ * requested, if the first attempt is not accepted. The returned sequence
+ * number is the one used in the successful update.
+ */
 pub async fn send_update(
     stats: &Stats,
     mut seq_number: UpdateSequenceNumber,
     signer: &[(UpdateKeysIndex, KeyPair)],
     exchange_rate: ExchangeRate,
     mut client: endpoints::Client,
-) -> (hashes::TransactionHash, UpdateSequenceNumber) {
+) -> Option<(hashes::TransactionHash, UpdateSequenceNumber)> {
     let mut get_new_seq_number = false;
 
     let mut interval = interval(Duration::from_secs(RETRY_SUBMISSION_INTERVAL));
@@ -61,7 +69,8 @@ pub async fn send_update(
                 Ok(o) => o,
                 Err(e) => {
                     log::error!("Unable to pull new sequence number due to: {}", e);
-                    continue;
+                    // The only reason this should fail is a connection issue.
+                    return None;
                 }
             };
             seq_number = new_summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
@@ -72,7 +81,7 @@ pub async fn send_update(
         match client.send_transaction(DEFAULT_NETWORK_ID, &block_item).await {
             Ok(true) => {
                 stats.reset_update_attempts();
-                return (block_item.hash(), seq_number);
+                return Some((block_item.hash(), seq_number));
             }
             Ok(false) => {
                 stats.increment_update_attempts();
@@ -80,6 +89,11 @@ pub async fn send_update(
                 // We assume that the reason for rejection is an incorrect sequence number
                 // (because it is the only one we can solve)
                 get_new_seq_number = true;
+            }
+            Err(endpoints::RPCError::CallError(_)) => {
+                stats.increment_update_attempts();
+                log::error!("Unable to reach current node during update");
+                return None;
             }
             Err(e) => {
                 stats.increment_update_attempts();
@@ -97,7 +111,7 @@ pub async fn send_update(
 pub async fn check_update_status(
     submission_id: hashes::TransactionHash,
     mut client: endpoints::Client,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let mut interval = interval(Duration::from_secs(CHECK_SUBMISSION_STATUS_INTERVAL));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {

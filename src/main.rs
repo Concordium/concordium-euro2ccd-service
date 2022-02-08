@@ -205,8 +205,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(prometheus::serve_prometheus(registry, app.prometheus_port));
     log::debug!("Started prometheus");
 
-    let summary =
-        get_block_summary(get_node_client(app.endpoint.clone(), &app.token).await?).await?;
+    let mut node_client = get_node_client(app.endpoint.clone(), &app.token).await?;
+    let summary = get_block_summary(node_client.clone()).await?;
     let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
     let initial_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
     let mut prev_rate =
@@ -259,7 +259,7 @@ async fn main() -> anyhow::Result<()> {
     // Log errors, and move on
 
     log::info!("Entering main loop");
-    loop {
+    'main: loop {
         log::debug!("Starting new main loop cycle: waiting for interval");
         interval.tick().await;
 
@@ -329,16 +329,29 @@ async fn main() -> anyhow::Result<()> {
         if let Some(signer) = signer.as_ref() {
             // Try to connect to a node, otherwise give up, and hope we can connect next
             // time
-            let node_client = match get_node_client(app.endpoint.clone(), &app.token).await {
-                Ok(client) => client,
-                Err(e) => {
-                    log::error!("Unable to send update: {}, skipping this update", e);
-                    continue;
+            let (submission_id, new_seq_number) = {
+                loop {
+                    // Try to send the update
+                    if let Some(result) =
+                        send_update(&stats, seq_number, &signer, new_rate, node_client.clone())
+                            .await
+                    {
+                        break result;
+                    };
+                    // The only reason we should fail sending the update, is connection problems, so
+                    // try to connect to a new node.
+                    node_client = match get_node_client(app.endpoint.clone(), &app.token).await {
+                        Ok(client) => client,
+                        Err(e) => {
+                            log::error!(
+                                "Unable to connect to any node: {}, skipping this update",
+                                e
+                            );
+                            continue 'main;
+                        }
+                    };
                 }
             };
-
-            let (submission_id, new_seq_number) =
-                send_update(&stats, seq_number, &signer, new_rate, node_client.clone()).await;
             log::info!("Sent update with submission id: {}", submission_id);
 
             match timeout(
