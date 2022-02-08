@@ -21,7 +21,6 @@ WORKDIR /build
 COPY --from=builder /build/target/release/concordium-eur2ccd /build/concordium-eur2ccd
 
 COPY ./scripts/debian-package/build.sh /build/build.sh
-COPY ./resources /build/resources
 
 RUN apt-get update && \
 DEBIAN_FRONTEND=noninteractive apt-get -y install debhelper dh-exec
