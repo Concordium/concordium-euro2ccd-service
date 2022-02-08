@@ -17,6 +17,7 @@ use reqwest::Url;
 use secretsmanager::{get_governance_from_aws, get_governance_from_file};
 use std::{
     collections::VecDeque,
+    fs::File,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -146,6 +147,19 @@ struct App {
     dry_run: bool,
 }
 
+/// Attempts to create a file, signalling that the service should be forced into
+/// dry run mode.
+fn force_dry_run() {
+    if let Err(e) = File::create(config::FORCED_DRY_RUN_FILE) {
+        log::error!("Failed creating file to force dry run: {}", e)
+    }
+}
+
+/// Checks if the file, which force_dry_run creates, has created.
+fn is_dry_run_forced() -> bool {
+    std::path::Path::exists(std::path::Path::new(config::FORCED_DRY_RUN_FILE))
+}
+
 /// This main program loop.
 /// The program is structured into two tasks. A background task is spawned that
 /// continuously polls the exchange for the current exchange rate and saves the
@@ -233,7 +247,12 @@ async fn main() -> anyhow::Result<()> {
         app.max_rates_saved,
     ));
 
-    let signer = if app.dry_run {
+    let forced_dry_run = is_dry_run_forced();
+    if forced_dry_run {
+        log::warn!("Entering forced dry run. (No updates will performed)");
+    }
+
+    let mut signer = if app.dry_run || forced_dry_run {
         None
     } else {
         let secret_keys = if app.local_keys.is_empty() {
@@ -284,12 +303,14 @@ async fn main() -> anyhow::Result<()> {
             if diff > halt_increase_threshold {
                 log::error!(
                     "New update violates halt threshold, changing from {} to {} is an ~{} % \
-                     increase",
+                     increase (forcing dry run)",
                     prev_rate,
                     rate,
                     diff.round()
                 );
-                bail!("Halt threshold violated");
+                force_dry_run();
+                signer = None;
+                continue;
             } else if diff > warning_increase_threshold {
                 log::warn!(
                     "New update violates warning threshold, changing from {} to {} has ~{} % \
@@ -304,12 +325,15 @@ async fn main() -> anyhow::Result<()> {
             // Rate has decreased
             if diff > halt_decrease_threshold {
                 log::error!(
-                    "New update violates halt threshold, changing from {} to {} has ~{} % decrease",
+                    "New update violates halt threshold, changing from {} to {} has ~{} % \
+                     decrease (forcing dry run)",
                     prev_rate,
                     rate,
                     diff.round()
                 );
-                bail!("Halt threshold violated");
+                force_dry_run();
+                signer = None;
+                continue;
             } else if diff > warning_decrease_threshold {
                 log::warn!(
                     "New update violates warning threshold, changing from {} to {} has ~{} % \

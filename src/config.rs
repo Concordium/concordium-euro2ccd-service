@@ -3,6 +3,7 @@ pub const MAX_RETRIES: u64 = 5; // When attempting to reach exchange
 pub const INITIAL_RETRY_INTERVAL: u64 = 10; // seconds, when attempting to reach exchange. (This gets doubled each
                                             // unsuccessful try)
 pub const BITFINEX_URL: &str = "https://api-pub.bitfinex.com/v2/calc/fx";
+pub const FORCED_DRY_RUN_FILE: &str = "update.lockfile";
 
 pub const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 5; // seconds
 pub const RETRY_SUBMISSION_INTERVAL: u64 = 10; // seconds

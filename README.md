@@ -33,3 +33,12 @@ Explanations of all parameters can be seen by using the help flag, i.e. `cargo r
 without performing them. Instead they are logged at INFO level.
 - `test_exchange` (environment variable: `EUR2CCD_SERVICE_TEST_EXCHANGE`): If this parameter is given, the service will read exchanges from the given URL instead of at Bitfinex. (See /local_exchange for an example implementation)
 - `local_keys` (environment variable: `EUR2CCD_SERVICE_LOCAL_KEYS`): Comma separated names of files, which the service will attempt to read keys from, instead of from secrets on AWS. (Expects the files to contain arrays of keys)
+
+
+## Forced dry run
+If the halt thresholds are violated, the service will enter dry run mode. After Restarting the service, it will forcibly enter dry run mode again.
+
+To disable this forced dry run, remove the `update.lockfile` at:
+```
+/var/lib/concordium-eur2ccd-service/update.lockfile
+```
