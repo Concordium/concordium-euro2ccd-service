@@ -1,5 +1,5 @@
 [package]
-name = "euro2ccd-service-test-exchange"
+name = "eur2ccd-service-test-exchange"
 version = "0.2.0"
 edition = "2018"
 

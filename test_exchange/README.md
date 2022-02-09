@@ -11,7 +11,7 @@ Has 2 parameters:
 Has 3 endpoints:
 
  * `GET /rate`: get an exchange rate (this should pointed to by the eur2ccd service.
- * `POST /add`: Expects a body that is a json array of floats, which will be added to the queue of values, which is served on `/rate`.
+ * `POST /add`: Expects a body that is a json array, whose elements will be added to the queue of values, which is served on `/rate`.
  * `PUT /reset`: clears the queue of values, which is served on `/rate`.
  * `PUT /update-resort/:f64`: updates the resort value, which is served on `/rate`, when the queue is empty.
 

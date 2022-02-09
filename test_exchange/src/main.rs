@@ -1,7 +1,7 @@
 use log::info;
 use std::{
     collections::VecDeque,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 use structopt::StructOpt;
 use warp::{Filter, Reply};
@@ -38,17 +38,16 @@ async fn main() {
 
     info!("Starting at port {}!", opt.port);
 
-    let rates = Arc::new(Mutex::new(VecDeque::new()));
-    let resort_value: Arc<Mutex<f64>> = Arc::new(Mutex::new(opt.resort_value));
+    let rates = Arc::new(Mutex::new(VecDeque::<serde_json::Value>::new()));
+    let resort_value = Arc::new(RwLock::new(opt.resort_value));
 
     let resort_serve = resort_value.clone();
     let rates_serve = rates.clone();
     let serve_rate = warp::get().and(warp::path!("rate")).map(move || {
-        let resort_unlocked = resort_serve.lock().unwrap();
         let mut rates_unlocked = rates_serve.lock().unwrap();
-        let rate: f64 = match rates_unlocked.pop_front() {
+        let rate = match rates_unlocked.pop_front() {
             Some(v) => v,
-            None => *resort_unlocked,
+            None => serde_json::json!(*resort_serve.read().unwrap()),
         };
 
         info!("Received request for rate, returning {}", rate);
@@ -57,7 +56,7 @@ async fn main() {
 
     let rates_add = rates.clone();
     let add_rates = warp::post().and(warp::body::json()).and(warp::path!("add")).map(
-        move |new_rates: Vec<f64>| {
+        move |new_rates: Vec<serde_json::Value>| {
             info!("Received new rates {:?}", new_rates);
 
             let mut rates_unlocked = rates_add.lock().unwrap();
@@ -70,7 +69,7 @@ async fn main() {
     let change_resort =
         warp::put().and(warp::path!("update-resort" / f64)).map(move |new_resort: f64| {
             info!("Received new resort value {:?}", new_resort);
-            let mut resort_unlocked = resort_value.lock().unwrap();
+            let mut resort_unlocked = resort_value.write().unwrap();
             *resort_unlocked = new_resort;
             warp::reply::reply()
         });
