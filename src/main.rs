@@ -327,8 +327,7 @@ async fn main() -> anyhow::Result<()> {
         log::debug!("Converted new_rate: {:?}", new_rate);
 
         if let Some(signer) = signer.as_ref() {
-            // Try to connect to a node, otherwise give up, and hope we can connect next
-            // time
+            // Send the update to a node. This loop only terminates if the node accepts the transaction or we can't connect to any node
             let (submission_id, new_seq_number) = {
                 loop {
                     // Try to send the update
@@ -338,8 +337,8 @@ async fn main() -> anyhow::Result<()> {
                     {
                         break result;
                     };
-                    // The only reason we should fail sending the update, is connection problems, so
-                    // try to connect to a new node.
+                    // We expect that connection/authentication problems would be the reason sending the update failed,
+                    // so we try to connect to a new node. (Any other problem would be have to be fixed manually)
                     node_client = match get_node_client(app.endpoint.clone(), &app.token).await {
                         Ok(client) => client,
                         Err(e) => {
@@ -361,7 +360,7 @@ async fn main() -> anyhow::Result<()> {
             .await
             {
                 Ok(submission_result) => {
-                    // if we failed to submit, or to query, we retry with the same sequence number.
+                    // if we fail to confirm the transaction finalized, we retry with the same sequence number next update.
                     // if the previous transaction is already finalized this submission will fail,
                     // and send_update will retry with a new sequence number.
                     if let Err(e) = submission_result {

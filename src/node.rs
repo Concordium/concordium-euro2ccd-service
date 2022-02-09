@@ -90,10 +90,18 @@ pub async fn send_update(
                 // (because it is the only one we can solve)
                 get_new_seq_number = true;
             }
-            Err(endpoints::RPCError::CallError(_)) => {
+            Err(endpoints::RPCError::CallError(status)) => {
                 stats.increment_update_attempts();
-                log::error!("Unable to reach current node during update");
-                return None;
+                match status.code() {
+                    tonic::Code::Internal | tonic::Code::FailedPrecondition | tonic::Code::PermissionDenied | tonic::Code::Aborted | tonic::Code::Unavailable | tonic::Code::Unknown => {
+                        log::error!("Unable to reach current node during update");
+                        return None;
+                    }
+                    code => {
+                        log::error!("RPC error occurred while sending update: {}", code);
+                        get_new_seq_number = true;
+                    }
+                }
             }
             Err(e) => {
                 stats.increment_update_attempts();
@@ -150,9 +158,8 @@ pub async fn get_node_client(
     token: &str,
 ) -> anyhow::Result<endpoints::Client> {
     for node_ep in endpoints.into_iter() {
-        match endpoints::Client::connect(node_ep, token.to_string()).await {
-            Ok(client) => return Ok(client),
-            Err(_) => continue,
+        if let Ok(client) = endpoints::Client::connect(node_ep, token.to_string()).await {
+            return Ok(client)
         };
     }
     anyhow::bail!("Unable to connect to any node");
