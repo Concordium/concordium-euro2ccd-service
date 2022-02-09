@@ -253,6 +253,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut signer = if app.dry_run || forced_dry_run {
+        stats.set_protected();
         None
     } else {
         let secret_keys = if app.local_keys.is_empty() {
@@ -310,6 +311,7 @@ async fn main() -> anyhow::Result<()> {
                 );
                 force_dry_run();
                 signer = None;
+                stats.set_protected();
                 continue;
             } else if diff > warning_increase_threshold {
                 log::warn!(
@@ -333,6 +335,7 @@ async fn main() -> anyhow::Result<()> {
                 );
                 force_dry_run();
                 signer = None;
+                stats.set_protected();
                 continue;
             } else if diff > warning_decrease_threshold {
                 log::warn!(

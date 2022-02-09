@@ -40,6 +40,8 @@ pub struct Stats {
     /// Number of times we failed to submit an update.
     /// Resets to 0 upon successful submission.
     update_attempts:              IntGauge,
+    /// A boolean gauge that indicates whether the service is in dry_run/protected mode (1) or not (0).
+    protected: IntGauge,
 }
 
 impl Stats {
@@ -57,6 +59,10 @@ impl Stats {
     pub fn increment_update_attempts(&self) { self.update_attempts.inc() }
 
     pub fn reset_update_attempts(&self) { self.update_attempts.set(0) }
+
+    pub fn set_protected(&self) {
+        self.protected.set(1);
+    }
 }
 
 pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
@@ -65,18 +71,22 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
     let exchange_rate_updated = Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?;
     let warning_threshold_violations = IntCounter::new(
         "warning_threshold_violations",
-        "amount of times an update has been outside the warning threshold",
+        "Amount of times an update has been outside the warning threshold.",
     )?;
     let update_attempts =
-        IntGauge::new("failed_submissions", "amount of times submitting an update has failed")?;
+        IntGauge::new("failed_submissions", "Amount of times submitting an update has failed.")?;
+    let protected =
+        IntGauge::new("in_protected_mode", "Whether the service is in protected (1) mode or not (0).")?;
     registry.register(Box::new(exchange_rate_read.clone()))?;
     registry.register(Box::new(exchange_rate_updated.clone()))?;
     registry.register(Box::new(warning_threshold_violations.clone()))?;
     registry.register(Box::new(update_attempts.clone()))?;
+    registry.register(Box::new(protected.clone()))?;
     Ok((registry, Stats {
         exchange_rate_read,
         exchange_rate_updated,
         warning_threshold_violations,
         update_attempts,
+        protected,
     }))
 }
