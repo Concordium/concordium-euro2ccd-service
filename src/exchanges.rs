@@ -53,13 +53,12 @@ where
  * Request current exchange rate from bitfinex.
  */
 async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> {
-    // TODO: replace ADA with CCD
-    let params = json!({"ccy1": "EUR", "ccy2": "ADA"});
+    let params = json!({"ccy1": "EUR", "ccy2": "CCD"});
 
     let resp = match client.post(BITFINEX_URL).json(&params).send().await {
         Ok(o) => o,
         Err(e) => {
-            log::warn!("Unable to retrieve from bitfinex: {:?}.", e);
+            log::warn!("Unable to retrieve from bitfinex: {}.", e);
             return None;
         }
     };
@@ -70,7 +69,7 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
         match resp.json::<Vec<f64>>().await {
             Ok(v) if v.len() == 1 => {
                 let raw_rate = v[0];
-                log::debug!("Raw exchange rate CCD/EUR polled from bitfinex: {:?}", raw_rate);
+                log::debug!("Raw exchange rate CCD/EUR polled from bitfinex: {}", raw_rate);
                 return Some(raw_rate);
             }
             Ok(arr) => {
@@ -88,7 +87,7 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
             }
         };
     } else {
-        log::error!("Error response from bitfinex: {:?}", resp.status());
+        log::error!("Error response from bitfinex: {}", resp.status());
     };
     None
 }
