@@ -91,6 +91,11 @@ pub fn convert_big_fraction_to_exchange_rate(target: &BigRational) -> ExchangeRa
         };
         numerator /= 2;
         denominator /= 2;
+        let gcd = numerator.gcd(&denominator);
+        if gcd > 1.into() {
+            numerator /= &gcd;
+            denominator /= gcd;
+        }
     }
 }
 

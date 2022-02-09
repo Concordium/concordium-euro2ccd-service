@@ -93,7 +93,12 @@ pub async fn send_update(
             Err(endpoints::RPCError::CallError(status)) => {
                 stats.increment_update_attempts();
                 match status.code() {
-                    tonic::Code::Internal | tonic::Code::FailedPrecondition | tonic::Code::PermissionDenied | tonic::Code::Aborted | tonic::Code::Unavailable | tonic::Code::Unknown => {
+                    tonic::Code::Internal
+                    | tonic::Code::FailedPrecondition
+                    | tonic::Code::PermissionDenied
+                    | tonic::Code::Aborted
+                    | tonic::Code::Unavailable
+                    | tonic::Code::Unknown => {
                         log::error!("Unable to reach current node during update");
                         return None;
                     }
@@ -159,7 +164,7 @@ pub async fn get_node_client(
 ) -> anyhow::Result<endpoints::Client> {
     for node_ep in endpoints.into_iter() {
         if let Ok(client) = endpoints::Client::connect(node_ep, token.to_string()).await {
-            return Ok(client)
+            return Ok(client);
         };
     }
     anyhow::bail!("Unable to connect to any node");
