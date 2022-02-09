@@ -133,6 +133,7 @@ async fn exchange_rate_getter<Fut>(
     pull_interval: u32,
     max_rates_saved: usize,
     client: reqwest::Client,
+    mut database_conn: Option<mysql::PooledConn>,
 ) where
     Fut: Future<Output = Option<f64>> + 'static, {
     let mut interval = interval(Duration::from_secs(pull_interval.into()));
@@ -155,6 +156,11 @@ async fn exchange_rate_getter<Fut>(
         };
 
         log::info!("New exchange rate polled: {:?}", raw_rate);
+        if let Some(ref mut conn) = database_conn {
+            if let Err(e) = crate::database::write_read_rate(conn, raw_rate) {
+                log::error!("Unable to INSERT new reading: {}, due to: {}", raw_rate, e)
+            };
+        }
         stats.update_read_rate(raw_rate);
 
         let rate = match BigRational::from_float(raw_rate) {
@@ -183,6 +189,7 @@ pub async fn pull_exchange_rate(
     rate_history: Arc<Mutex<VecDeque<BigRational>>>,
     pull_interval: u32,
     max_rates_saved: usize,
+    database_conn: Option<mysql::PooledConn>,
 ) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
 
@@ -195,6 +202,7 @@ pub async fn pull_exchange_rate(
                 pull_interval,
                 max_rates_saved,
                 client,
+                database_conn,
             )
             .await
         }
@@ -206,6 +214,7 @@ pub async fn pull_exchange_rate(
                 pull_interval,
                 max_rates_saved,
                 client,
+                database_conn,
             )
             .await
         }

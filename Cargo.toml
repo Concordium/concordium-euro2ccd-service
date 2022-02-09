@@ -22,6 +22,7 @@ num-bigint = "0.4"
 num-integer = "0.1.44"
 chrono = {version = "0.4", features = ["serde"] }
 tonic = "0.5"
+mysql = "21.0.2"
 
 crypto_common = { version = "0.1.0", path = "./deps/concordium-rust-sdk/concordium-base/rust-src/crypto_common", features = ["encryption"] }
 
