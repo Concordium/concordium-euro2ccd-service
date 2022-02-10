@@ -1,4 +1,5 @@
 mod config;
+mod database;
 mod exchanges;
 mod helpers;
 mod node;
@@ -145,6 +146,12 @@ struct App {
         env = "EUR2CCD_DRY_RUN"
     )]
     dry_run: bool,
+    #[structopt(
+        long = "database-url",
+        help = "MySQL Connection url for a database, where every reading and update is inserted",
+        env = "EUR2CCD_SERVICE_DATABASE_URL"
+    )]
+    database_url: Option<String>,
 }
 
 /// Attempts to create a file, signalling that the service should be forced into
@@ -207,6 +214,18 @@ async fn main() -> anyhow::Result<()> {
 
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
 
+    let (mut main_database_conn, reader_database_conn) = {
+        if let Some(url) = app.database_url {
+            let pool = database::establish_connection_pool(&url)?;
+            (Some(pool.get_conn()?), Some(pool.get_conn()?))
+        } else {
+            log::warn!(
+                "No database url provided, service will not save to read and updated rates!"
+            );
+            (None, None)
+        }
+    };
+
     let warning_increase_threshold =
         BigRational::from_integer(app.warning_increase_threshold.into());
     let halt_increase_threshold = BigRational::from_integer(app.halt_increase_threshold.into());
@@ -245,6 +264,7 @@ async fn main() -> anyhow::Result<()> {
         rates_mutex.clone(),
         app.pull_interval,
         app.max_rates_saved,
+        reader_database_conn,
     ));
 
     let forced_dry_run = is_dry_run_forced();
@@ -406,6 +426,16 @@ async fn main() -> anyhow::Result<()> {
                             new_rate,
                             submission_id
                         );
+                        if let Some(ref mut database_conn) = main_database_conn {
+                            if let Err(e) = database::write_update_rate(database_conn, new_rate) {
+                                stats.increment_failed_database_updates();
+                                log::error!(
+                                    "Unable to INSERT new update: {:?}, due to: {}",
+                                    new_rate,
+                                    e
+                                )
+                            };
+                        }
                     }
                 }
                 Err(e) => log::error!(

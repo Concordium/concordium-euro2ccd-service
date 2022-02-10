@@ -21,6 +21,7 @@ Explanations of all parameters can be seen by using the help flag, i.e. `cargo r
 - `rpc-token` (environment variable: `EUR2CCD_SERVICE_RPC_TOKEN`): GRPC interface access token for accessing the node. (default: rpcadmin) 
 - `log-level` (environment variable: `EUR2CCD_SERVICE_LOG_LEVEL`): Determines the log level, defaults to outputting info messages (and higher priorities).
 - `prometheus-port` (environment variable: `EUR2CCD_SERVICE_PROMETHEUS_PORT`): Port at which prometheus is served. (default: 8112)
+- `database-url` (environment variable: `EUR2CCD_SERVICE_DATABASE_URL`): MySQL connection url, where every reading and update is inserted at. (Optional)
 - `pull_exchange_interval` (environment variable: `EUR2CCD_SERVICE_PULL_INTERVAL`): How often to read the exchange rate from exchange (In seconds). (default: 60 seconds)
 - `max_rates_saved` (environment variable: `EUR2CCD_SERVICE_MAX_RATES_SAVED`): How many exchange rates should be saved at a time (and used to determine the update value). (default: 60) 
 - `update_interval` (environment variable: `EUR2CCD_SERVICE_UPDATE_INTERVAL`): How often to update the exchange rate on chain (In seconds). (default: 1800 seconds)
