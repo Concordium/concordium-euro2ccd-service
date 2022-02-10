@@ -219,7 +219,9 @@ async fn main() -> anyhow::Result<()> {
             let pool = database::establish_connection_pool(&url)?;
             (Some(pool.get_conn()?), Some(pool.get_conn()?))
         } else {
-            log::warn!("No database url provided, service will not save to read and updated rates!");
+            log::warn!(
+                "No database url provided, service will not save to read and updated rates!"
+            );
             (None, None)
         }
     };
@@ -426,6 +428,7 @@ async fn main() -> anyhow::Result<()> {
                         );
                         if let Some(ref mut database_conn) = main_database_conn {
                             if let Err(e) = database::write_update_rate(database_conn, new_rate) {
+                                stats.increment_failed_database_updates();
                                 log::error!(
                                     "Unable to INSERT new update: {:?}, due to: {}",
                                     new_rate,

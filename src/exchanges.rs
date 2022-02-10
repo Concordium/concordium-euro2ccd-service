@@ -158,6 +158,7 @@ async fn exchange_rate_getter<Fut>(
         log::info!("New exchange rate polled: {:?}", raw_rate);
         if let Some(ref mut conn) = database_conn {
             if let Err(e) = crate::database::write_read_rate(conn, raw_rate) {
+                stats.increment_failed_database_updates();
                 log::error!("Unable to INSERT new reading: {}, due to: {}", raw_rate, e)
             };
         }

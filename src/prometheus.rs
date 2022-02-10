@@ -40,8 +40,11 @@ pub struct Stats {
     /// Number of times we failed to submit an update.
     /// Resets to 0 upon successful submission.
     update_attempts:              IntGauge,
-    /// A boolean gauge that indicates whether the service is in dry_run/protected mode (1) or not (0).
-    protected: IntGauge,
+    /// A boolean gauge that indicates whether the service is in
+    /// dry_run/protected mode (1) or not (0).
+    protected:                    IntGauge,
+    /// Number of times we failed to write to the database:
+    failed_database_updates:      IntCounter,
 }
 
 impl Stats {
@@ -60,9 +63,9 @@ impl Stats {
 
     pub fn reset_update_attempts(&self) { self.update_attempts.set(0) }
 
-    pub fn set_protected(&self) {
-        self.protected.set(1);
-    }
+    pub fn set_protected(&self) { self.protected.set(1); }
+
+    pub fn increment_failed_database_updates(&self) { self.failed_database_updates.inc() }
 }
 
 pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
@@ -75,18 +78,26 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
     )?;
     let update_attempts =
         IntGauge::new("failed_submissions", "Amount of times submitting an update has failed.")?;
-    let protected =
-        IntGauge::new("in_protected_mode", "Whether the service is in protected (1) mode or not (0).")?;
+    let protected = IntGauge::new(
+        "in_protected_mode",
+        "Whether the service is in protected (1) mode or not (0).",
+    )?;
+    let failed_database_updates = IntCounter::new(
+        "failed_database_updates",
+        "Amount of times writing to the database has failed.",
+    )?;
     registry.register(Box::new(exchange_rate_read.clone()))?;
     registry.register(Box::new(exchange_rate_updated.clone()))?;
     registry.register(Box::new(warning_threshold_violations.clone()))?;
     registry.register(Box::new(update_attempts.clone()))?;
     registry.register(Box::new(protected.clone()))?;
+    registry.register(Box::new(failed_database_updates.clone()))?;
     Ok((registry, Stats {
         exchange_rate_read,
         exchange_rate_updated,
         warning_threshold_violations,
         update_attempts,
         protected,
+        failed_database_updates,
     }))
 }
