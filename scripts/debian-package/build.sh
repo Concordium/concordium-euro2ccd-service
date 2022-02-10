@@ -63,7 +63,7 @@ RestrictRealtime=yes
 MemoryDenyWriteExecute=yes
 
 # state directory is relative to /var/lib/, see systemd man pages Sandboxing section.
-StateDirectory=concordium-eur2ccd-service
+StateDirectory=%S/concordium-eur2ccd-service
 WorkingDirectory=%S/concordium-eur2ccd-service
 
 Environment=EUR2CCD_SERVICE_NODE=http://127.0.0.1:10000

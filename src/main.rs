@@ -155,7 +155,7 @@ fn force_dry_run() {
     }
 }
 
-/// Checks if the file, which force_dry_run creates, has created.
+/// Checks if the file, which force_dry_run creates, exists.
 fn is_dry_run_forced() -> bool {
     std::path::Path::exists(std::path::Path::new(config::FORCED_DRY_RUN_FILE))
 }
