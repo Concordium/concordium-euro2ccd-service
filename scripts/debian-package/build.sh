@@ -25,13 +25,8 @@ concordium-eur2ccd ($build_version) unstable; urgency=medium
  -- Concordium developers <developers@concordium.com>  Wed, 3 Feb 2022 08:15:00 +2000
 EOF
 
-mkdir -p pkg-root/data
-cp ./resources/bitfinex-com{.der,.pem} pkg-root/data
-
 cat > pkg-root/debian/concordium-eur2ccd.install<<EOF
 binaries/concordium-eur2ccd /usr/bin/
-data/bitfinex-com.der /usr/share/concordium-eur2ccd/
-data/bitfinex-com.pem /usr/share/concordium-eur2ccd/
 EOF
 
 cat > pkg-root/debian/compat <<'EOF'
@@ -67,15 +62,23 @@ LockPersonality=yes
 RestrictRealtime=yes
 MemoryDenyWriteExecute=yes
 
+# state directory is relative to /var/lib/, see systemd man pages Sandboxing section.
+StateDirectory=%S/concordium-eur2ccd-service
+WorkingDirectory=%S/concordium-eur2ccd-service
+
 Environment=EUR2CCD_SERVICE_NODE=http://127.0.0.1:10000
 Environment=EUR2CCD_SERVICE_RPC_TOKEN=rpcadmin
 Environment=EUR2CCD_SERVICE_UPDATE_INTERVAL=1800
 Environment=EUR2CCD_SERVICE_PULL_INTERVAL=60
-Environment=EUR2CCD_SERVICE_MAX_DEVIATION=30
 Environment=EUR2CCD_SERVICE_PROMETHEUS_PORT=8112
 Environment=EUR2CCD_SERVICE_LOG_LEVEL=debug
 Environment=EUR2CCD_SERVICE_SECRET_NAMES=secret1-dummy,secret2-dummy
-Environment=EUR2CCD_SERVICE_BITFINEX_CERTIFICATE=/usr/share/concordium-eur2ccd/bitfinex-com.der
+Environment=EUR2CCD_SERVICE_AWS_REGION=eu-central-1
+Environment=EUR2CCD_SERVICE_MAX_RATES_SAVED=60
+Environment=EUR2CCD_SERVICE_WARNING_INCREASE_THRESHOLD=30
+Environment=EUR2CCD_SERVICE_HALT_INCREASE_THRESHOLD=100
+Environment=EUR2CCD_SERVICE_WARNING_DECREASE_THRESHOLD=15
+Environment=EUR2CCD_SERVICE_HALT_DECREASE_THRESHOLD=50
 
 [Install]
 # start the service when reaching multi-user target

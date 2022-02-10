@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use num_rational::BigRational;
+use num_traits::ToPrimitive;
 use prometheus::{Encoder, Gauge, IntCounter, IntGauge, Registry, TextEncoder};
 use warp::{http::StatusCode, Filter};
 
@@ -29,36 +31,73 @@ pub async fn serve_prometheus(registry: Registry, port: u16) {
 
 #[derive(Debug, Clone)]
 pub struct Stats {
-    exchange_rate:   Gauge,
-    dropped_times:   IntCounter,
+    /// The last exchange rate read from bitfinex.
+    exchange_rate_read:           Gauge,
+    /// The last exchange rate read from bitfinex.
+    exchange_rate_updated:        Gauge,
+    /// Number of times an update has been outside the warning threshold.
+    warning_threshold_violations: IntCounter,
     /// Number of times we failed to submit an update.
     /// Resets to 0 upon successful submission.
-    update_attempts: IntGauge,
+    update_attempts:              IntGauge,
+    /// A boolean gauge that indicates whether the service is in
+    /// dry_run/protected mode (1) or not (0).
+    protected:                    IntGauge,
+    /// Number of times we failed to write to the database:
+    failed_database_updates:      IntCounter,
 }
 
 impl Stats {
-    pub fn update_rate(&self, rate: f64) { self.exchange_rate.set(rate) }
+    pub fn update_read_rate(&self, rate: f64) { self.exchange_rate_read.set(rate) }
 
-    pub fn increment_dropped_times(&self) { self.dropped_times.inc() }
+    pub fn update_updated_rate(&self, rate: &BigRational) {
+        match rate.to_f64() {
+            Some(f) => self.exchange_rate_updated.set(f),
+            None => log::warn!("Unable to convert updated rate to float for Prometheus"),
+        }
+    }
+
+    pub fn increment_warning_threshold_violations(&self) { self.warning_threshold_violations.inc() }
 
     pub fn increment_update_attempts(&self) { self.update_attempts.inc() }
 
     pub fn reset_update_attempts(&self) { self.update_attempts.set(0) }
+
+    pub fn set_protected(&self) { self.protected.set(1); }
+
+    pub fn increment_failed_database_updates(&self) { self.failed_database_updates.inc() }
 }
 
 pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
     let registry = Registry::new();
-    let exchange_rate = Gauge::new("exchange_rate", "Last polled exchange rate.")?;
-    let dropped_times =
-        IntCounter::new("rates_bounded", "amount of times exchange rate has been bounded")?;
+    let exchange_rate_read = Gauge::new("exchange_rate_read", "Last polled exchange rate.")?;
+    let exchange_rate_updated = Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?;
+    let warning_threshold_violations = IntCounter::new(
+        "warning_threshold_violations",
+        "Amount of times an update has been outside the warning threshold.",
+    )?;
     let update_attempts =
-        IntGauge::new("failed_submissions", "amount of times submitting an update has failed")?;
-    registry.register(Box::new(exchange_rate.clone()))?;
-    registry.register(Box::new(dropped_times.clone()))?;
+        IntGauge::new("failed_submissions", "Amount of times submitting an update has failed.")?;
+    let protected = IntGauge::new(
+        "in_protected_mode",
+        "Whether the service is in protected (1) mode or not (0).",
+    )?;
+    let failed_database_updates = IntCounter::new(
+        "failed_database_updates",
+        "Amount of times writing to the database has failed.",
+    )?;
+    registry.register(Box::new(exchange_rate_read.clone()))?;
+    registry.register(Box::new(exchange_rate_updated.clone()))?;
+    registry.register(Box::new(warning_threshold_violations.clone()))?;
     registry.register(Box::new(update_attempts.clone()))?;
+    registry.register(Box::new(protected.clone()))?;
+    registry.register(Box::new(failed_database_updates.clone()))?;
     Ok((registry, Stats {
-        exchange_rate,
-        dropped_times,
+        exchange_rate_read,
+        exchange_rate_updated,
+        warning_threshold_violations,
         update_attempts,
+        protected,
+        failed_database_updates,
     }))
 }
