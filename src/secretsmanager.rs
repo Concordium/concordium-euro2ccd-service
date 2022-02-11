@@ -8,6 +8,7 @@ pub async fn get_governance_from_aws(
     region: String,
     secret_names: Vec<String>,
 ) -> anyhow::Result<Vec<KeyPair>> {
+    log::debug!("Loading keys from AWS secret manager!");
     let region_provider = RegionProviderChain::first_try(Region::new(region)).or_default_provider();
     let shared_config = aws_config::from_env().region(region_provider).load().await;
 

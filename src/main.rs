@@ -192,7 +192,22 @@ async fn main() -> anyhow::Result<()> {
     log_builder.filter_module(module_path!(), app.log_level);
     log_builder.init();
 
-    log::debug!("Starting with configuration {:?}", app);
+    log::debug!("Updating every {} seconds)", app.update_interval);
+    log::debug!(
+        "Warnings will be triggered when updates increase by {}% or decrease by {}%",
+        app.warning_increase_threshold,
+        app.warning_decrease_threshold
+    );
+    log::debug!(
+        "Protected mode will be engaged when updates increase by {}% or decrease by {}%",
+        app.halt_increase_threshold,
+        app.halt_decrease_threshold
+    );
+    log::debug!(
+        "Pulling rates every {} seconds. (Max {} rates are saved at a time)",
+        app.pull_interval,
+        app.max_rates_saved
+    );
 
     anyhow::ensure!(!app.endpoint.is_empty(), "At least one node must be provided.");
 
@@ -275,9 +290,11 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut signer = if app.dry_run || forced_dry_run {
+        log::debug!("Running dry run!");
         stats.set_protected();
         None
     } else {
+        log::debug!("Running wet run!");
         let secret_keys = if app.local_keys.is_empty() {
             anyhow::ensure!(
                 !app.secret_names.is_empty(),
