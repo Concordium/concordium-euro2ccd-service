@@ -217,7 +217,9 @@ async fn main() -> anyhow::Result<()> {
     let (mut main_database_conn, reader_database_conn) = {
         if let Some(url) = app.database_url {
             let pool = database::establish_connection_pool(&url)?;
-            (Some(pool.get_conn()?), Some(pool.get_conn()?))
+            let mut main_conn = pool.get_conn()?;
+            database::create_tables(&mut main_conn)?;
+            (Some(main_conn), Some(pool.get_conn()?))
         } else {
             log::warn!(
                 "No database url provided, service will not save to read and updated rates!"
