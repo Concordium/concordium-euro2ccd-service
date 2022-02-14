@@ -69,6 +69,10 @@ async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> 
         match resp.json::<Vec<f64>>().await {
             Ok(v) if v.len() == 1 => {
                 let raw_rate = v[0];
+                if raw_rate < 0.0 {
+                    log::error!("Exchange rate from bitfinex is negative: {}", raw_rate);
+                    return None;
+                }
                 log::debug!("Raw exchange rate CCD/EUR polled from bitfinex: {}", raw_rate);
                 return Some(raw_rate);
             }
@@ -107,6 +111,10 @@ async fn request_exchange_rate_test(client: reqwest::Client, url: Url) -> Option
         match resp.json::<Vec<f64>>().await {
             Ok(v) => {
                 let raw_rate = v[0];
+                if raw_rate < 0.0 {
+                    log::error!("Exchange rate from test exchange is negative: {}", raw_rate);
+                    return None;
+                }
                 log::debug!("Raw exchange rate CCD/EUR polled from test exchange: {:?}", raw_rate);
                 return Some(raw_rate);
             }
