@@ -121,7 +121,7 @@ struct App {
     #[structopt(
         long = "max_rates_saved",
         help = "Determines the size of the history of rates from the exchange",
-        env = "EUR2CCD_SERVICE_MAXIMUM_RATES_SAVED",
+        env = "EUR2CCD_SERVICE_MAX_RATES_SAVED",
         default_value = "60"
     )]
     max_rates_saved: usize,
@@ -170,10 +170,10 @@ fn is_dry_run_forced() -> bool {
 /// This main program loop.
 /// The program is structured into two tasks. A background task is spawned that
 /// continuously polls the exchange for the current exchange rate and saves the
-/// last [config::MAXIMUM_RATES_SAVED] queries.
+/// last [config::MAX_RATES_SAVED] queries.
 /// In the main task the service attempts to update the exchange rate every
 /// `update-interval` seconds. It does this by looking at the last
-/// [config::MAXIMUM_RATES_SAVED] exchange rates and deriving the update
+/// [config::MAX_RATES_SAVED] exchange rates and deriving the update
 /// exchange rate from those, by ignoring outliers, etc. This exchange rate is
 /// then submitted to the chain, and queried until the transaction is finalized
 
