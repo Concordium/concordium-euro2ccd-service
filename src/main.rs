@@ -10,7 +10,7 @@ use anyhow::{bail, Context};
 use clap::AppSettings;
 use concordium_rust_sdk::endpoints;
 use config::MAX_TIME_CHECK_SUBMISSION;
-use exchanges::{pull_exchange_rate, Exchange};
+use exchanges::{pull_exchange_rate, Source};
 use helpers::{compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_change};
 use node::{check_update_status, get_block_summary, get_node_client, send_update};
 use num_rational::BigRational;
@@ -269,8 +269,8 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let exchange = match app.test_exchange {
-        Some(url) => Exchange::Test(url),
-        None => Exchange::Bitfinex,
+        Some(url) => Source::Test(url),
+        None => Source::Bitfinex,
     };
 
     let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(app.max_rates_saved)));

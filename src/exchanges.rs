@@ -14,7 +14,7 @@ use tokio::time::{interval, sleep, Duration};
 use crypto_common::*;
 
 #[derive(Clone)]
-pub enum Exchange {
+pub enum Source {
     Bitfinex,
     Test(Url),
     CoinGecko,
@@ -26,19 +26,18 @@ pub enum Exchange {
  * Wrapper for a request function, to continous attempts, with exponential
  * backoff.
  */
-async fn request_with_backoff<'a, Fut: 'a, T, Input>(
-    input: Input,
-    request_fn: impl Fn(Input) -> Fut,
+async fn request_with_backoff<'a, Fut: 'a, T>(
+    request_fn: impl Fn() -> Fut,
     initial_delay: u64,
     max_retries: u64,
 ) -> Option<T>
 where
-    Input: Clone,
-    Fut: Future<Output = Option<T>>, {
+    Fut: Future<Output = Option<T>>,
+    {
     let mut timeout = initial_delay;
     let mut retries = max_retries;
     loop {
-        if let Some(i) = request_fn(input.clone()).await {
+        if let Some(i) = request_fn().await {
             return Some(i);
         }
 
@@ -159,22 +158,41 @@ async fn request_exchange_rate_core<ResponseFormat: for<'de> crypto_common::Serd
 }
 
 /**
+ * Pulls the exchange rate using the provided client from the given source.
+ */
+async fn request_matcher(client: reqwest::Client, source: Source) -> Option<f64> {
+    match source {
+        Source::Bitfinex => request_exchange_rate_bitfinex(client).await,
+        Source::LiveCoinWatch(api_key) => request_exchange_rate_livecoinwatch(client, api_key).await,
+        Source::CoinMarketCap(api_key) => request_exchange_rate_coinmarketcap(client, api_key).await,
+        Source::CoinGecko => request_exchange_rate_coingecko(client).await,
+        Source::Test(url) => request_exchange_rate_core(client.get(url), |v: Vec<f64>| Some(v[0]), "Test exchange").await
+    }
+}
+
+/**
  * Function that continously pulls the exchange rate using request_fn, and
  * updates the given rates_mutex. Ensures that new rates doesn't deviate
  * outside allowed range. Ensures that old rates are discarded, when the
  * queue exceeds max size.
  */
-async fn exchange_rate_getter<Fut>(
+pub async fn pull_exchange_rate(
     stats: prometheus::Stats,
-    stats_label: &str,
-    request_fn: impl Fn(reqwest::Client) -> Fut + Clone,
+    source: Source,
     rate_history_mutex: Arc<Mutex<VecDeque<BigRational>>>,
     pull_interval: u32,
     max_rates_saved: usize,
-    client: reqwest::Client,
     mut database_conn: Option<mysql::PooledConn>,
-) where
-    Fut: Future<Output = Option<f64>> + 'static, {
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::new();
+    let stats_label = match source.clone() {
+        Source::Bitfinex => prometheus::EXCHANGE_LABEL,
+        Source::LiveCoinWatch(_) => prometheus::LIVECOINWATCH_LABEL,
+        Source::CoinMarketCap(_) => prometheus::COINMARKETCAP_LABEL,
+        Source::CoinGecko => prometheus::COINGECKO_LABEL,
+        Source::Test(_) => prometheus::EXCHANGE_LABEL
+    };
+
     let mut interval = interval(Duration::from_secs(pull_interval.into()));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -183,8 +201,7 @@ async fn exchange_rate_getter<Fut>(
         log::debug!("Polling for exchange rate");
 
         let raw_rate = match request_with_backoff(
-            client.clone(),
-            request_fn.clone(),
+            || request_matcher(client.clone(), source.clone()),
             INITIAL_RETRY_INTERVAL,
             MAX_RETRIES,
         )
@@ -218,89 +235,6 @@ async fn exchange_rate_getter<Fut>(
             }
         }; // drop lock
     }
-}
-
-/**
- * Get the new MicroCCD/Euro exchange rate
- */
-pub async fn pull_exchange_rate(
-    stats: prometheus::Stats,
-    exchange: Exchange,
-    rate_history: Arc<Mutex<VecDeque<BigRational>>>,
-    pull_interval: u32,
-    max_rates_saved: usize,
-    database_conn: Option<mysql::PooledConn>,
-) -> anyhow::Result<()> {
-    let client = reqwest::Client::new();
-
-    match exchange {
-        Exchange::Bitfinex => {
-            exchange_rate_getter(
-                stats,
-                prometheus::EXCHANGE_LABEL,
-                request_exchange_rate_bitfinex,
-                rate_history,
-                pull_interval,
-                max_rates_saved,
-                client,
-                database_conn,
-            )
-            .await
-        }
-        Exchange::Test(url) => {
-            exchange_rate_getter(
-                stats,
-                prometheus::EXCHANGE_LABEL,
-                |client| request_exchange_rate_core(client.get(url.clone()), |v: Vec<f64>| Some(v[0]), "Test exchange"),
-                rate_history,
-                pull_interval,
-                max_rates_saved,
-                client,
-                database_conn,
-            )
-            .await
-        }
-        Exchange::CoinGecko => {
-            exchange_rate_getter(
-                stats,
-                prometheus::COINGECKO_LABEL,
-                request_exchange_rate_coingecko,
-                rate_history,
-                pull_interval,
-                max_rates_saved,
-                client,
-                database_conn,
-            )
-                .await
-        }
-        Exchange::LiveCoinWatch(api_key) => {
-            exchange_rate_getter(
-                stats,
-                prometheus::LIVECOINWATCH_LABEL,
-                |client| request_exchange_rate_livecoinwatch(client, api_key.clone()),
-                rate_history,
-                pull_interval,
-                max_rates_saved,
-                client,
-                database_conn,
-            )
-                .await
-        }
-        Exchange::CoinMarketCap(api_key) => {
-            exchange_rate_getter(
-                stats,
-                prometheus::COINMARKETCAP_LABEL,
-                |client| request_exchange_rate_coinmarketcap(client, api_key.clone()),
-                rate_history,
-                pull_interval,
-                max_rates_saved,
-                client,
-                database_conn,
-            )
-                .await
-        }
-    };
-    Ok(())
 }
 
 #[cfg(test)]
@@ -346,20 +280,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_backoff_lower_bound() {
-        let dummy_req = |_c: Option<()>| futures::future::ready::<Option<()>>(None);
+        let dummy_req = || futures::future::ready::<Option<()>>(None);
 
         let start = Instant::now();
-        request_with_backoff(None, dummy_req, 10, 1).await;
+        request_with_backoff(dummy_req, 10, 1).await;
         let duration = start.elapsed();
         assert!(duration <= std::time::Duration::from_secs(30)); // 10 + 20
     }
 
     #[tokio::test]
     async fn test_backoff_upper_bound() {
-        let dummy_req = |_c: Option<()>| futures::future::ready::<Option<()>>(None);
+        let dummy_req = || futures::future::ready::<Option<()>>(None);
 
         let start = Instant::now();
-        request_with_backoff(None, dummy_req, 10, 2).await;
+        request_with_backoff(dummy_req, 10, 2).await;
         let duration = start.elapsed();
         assert!(duration >= std::time::Duration::from_secs(30)); // 10 + 20
     }
