@@ -1,6 +1,6 @@
 mod config;
 mod database;
-mod exchanges;
+mod sources;
 mod helpers;
 mod node;
 mod prometheus;
@@ -10,7 +10,7 @@ use anyhow::{bail, Context};
 use clap::AppSettings;
 use concordium_rust_sdk::endpoints;
 use config::MAX_TIME_CHECK_SUBMISSION;
-use exchanges::{pull_exchange_rate, Source};
+use sources::{pull_exchange_rate, Source};
 use helpers::{compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_change};
 use node::{check_update_status, get_block_summary, get_node_client, send_update};
 use num_rational::BigRational;
