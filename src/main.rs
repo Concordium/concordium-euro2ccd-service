@@ -126,13 +126,14 @@ struct App {
     )]
     max_rates_saved: usize,
     #[structopt(
-        long = "test-exchange",
-        help = "If set to true, pulls exchange rate from the given location (see local_exchange \
+        long = "test-source",
+        help = "If set to true, pulls exchange rate from each of the given locations (see local_exchange \
                 subproject)  (FOR TESTING)",
         env = "EUR2CCD_SERVICE_TEST_EXCHANGE",
+        use_delimiter = true,
         group = "testing"
     )]
-    test_exchange: Option<Url>,
+    test_source: Option<Vec<Url>>,
     #[structopt(
         long = "local-keys",
         help = "If given, the service uses local governance keys in specified file instead of \
@@ -152,6 +153,30 @@ struct App {
         env = "EUR2CCD_SERVICE_DATABASE_URL"
     )]
     database_url: Option<String>,
+    #[structopt(
+        long = "coin-gecko",
+        help = "If this flag is enabled, Coin Gecko is added to the list of sources",
+        env = "EUR2CCD_SERVICE_COIN_GECKO"
+    )]
+    coin_gecko: bool,
+        #[structopt(
+            long = "coin-market-cap",
+            help = "If this flag is enabled, Coin Market Cap is added to the list of sources. The value must be the API key for the site",
+            env = "EUR2CCD_SERVICE_COIN_MARKET_CAP"
+        )]
+    coin_market_cap: Option<String>,
+        #[structopt(
+            long = "live_coin_watch",
+            help = "If this flag is enabled, Live Coin Watch is added to the list of sources. The value must be the API key for the site",
+            env = "EUR2CCD_SERVICE_LIVE_COIN_WATCH"
+        )]
+    live_coin_watch: Option<String>,
+    #[structopt(
+        long = "bitfinex",
+        help = "If this flag is enabled, BitFinex is added to the list of sources",
+        env = "EUR2CCD_SERVICE_BITFINEX"
+    )]
+    bitfinex: bool,
 }
 
 /// Attempts to create a file, signalling that the service should be forced into
@@ -179,7 +204,7 @@ fn is_dry_run_forced() -> bool {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let app = {
+    let app: App = {
         let app = App::clap().global_setting(AppSettings::ColoredHelp);
         let matches = app.get_matches();
         App::from_clap(&matches)
@@ -229,12 +254,12 @@ async fn main() -> anyhow::Result<()> {
 
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
 
-    let (mut main_database_conn, reader_database_conn) = {
-        if let Some(url) = app.database_url {
+    let (mut main_database_conn, connection_pool) = {
+        if let Some(ref url) = app.database_url {
             let pool = database::establish_connection_pool(&url)?;
             let mut main_conn = pool.get_conn()?;
             database::create_tables(&mut main_conn)?;
-            (Some(main_conn), Some(pool.get_conn()?))
+            (Some(main_conn), Some(pool))
         } else {
             log::warn!(
                 "No database url provided, service will not save to read and updated rates!"
@@ -268,21 +293,60 @@ async fn main() -> anyhow::Result<()> {
         initial_rate.numerator as f64 / initial_rate.denominator as f64
     );
 
-    let exchange = match app.test_exchange {
-        Some(url) => Source::Test(url),
-        None => Source::Bitfinex,
+    let mut rate_histories = Vec::new();
+    let max_rates_saved = app.max_rates_saved;
+    let pull_interval = app.pull_interval;
+
+    let mut add_source = |source: Source| -> anyhow::Result<()> {
+        let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(max_rates_saved)));
+        rate_histories.push(rates_mutex.clone());
+        let reader_conn = match connection_pool.clone() {
+            Some(ref p) => Some(p.get_conn()?),
+            None => None
+        };
+
+        tokio::spawn(pull_exchange_rate(
+            stats.clone(),
+            source,
+            rates_mutex,
+            pull_interval,
+            max_rates_saved,
+            reader_conn,
+        ));
+        Ok(())
     };
 
-    let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(app.max_rates_saved)));
+    if app.coin_gecko {
+        log::info!("Using \"Coin Gecko\" as a source");
+        add_source(Source::CoinGecko)?
+    }
 
-    tokio::spawn(pull_exchange_rate(
-        stats.clone(),
-        exchange,
-        rates_mutex.clone(),
-        app.pull_interval,
-        app.max_rates_saved,
-        reader_database_conn,
-    ));
+    if app.bitfinex {
+        log::info!("Using \"BitFinex\" as a source");
+        add_source(Source::Bitfinex)?
+    }
+
+    if let Some(api_key) = app.coin_market_cap {
+        log::info!("Using \"Coin Market Cap\" as a source");
+        add_source(Source::CoinMarketCap(api_key))?
+    }
+
+    if let Some(api_key) = app.live_coin_watch {
+        log::info!("Using \"Live Coin Watch\" as a source");
+        add_source(Source::LiveCoinWatch(api_key))?
+    }
+
+    if let Some(test_sources) = app.test_source {
+        for url in test_sources  {
+            log::info!("Using test source: {}", url);
+            add_source(Source::Test(url))?
+        }
+    }
+
+    if rate_histories.is_empty() {
+        log::error!("No sources was chosen");
+        bail!("Error during startup");
+    }
 
     let forced_dry_run = is_dry_run_forced();
     if forced_dry_run {
@@ -323,10 +387,14 @@ async fn main() -> anyhow::Result<()> {
         interval.tick().await;
 
         let rate = {
-            let rates_lock = rates_mutex.lock().unwrap();
-            match compute_median(&*rates_lock) {
-                Some(r) => r * &million, /* multiply with 1000000 microCCD/CCD to convert the */
-                // unit to microCCD/Eur
+            // For each source, we compute the median of their history:
+            let rate_medians = rate_histories.iter().map(|rates_mutex| {
+                let rates_lock = rates_mutex.lock().unwrap();
+                compute_median(&*rates_lock)
+            }).collect::<Option<VecDeque<_>>>();
+            // Then we determine the median of the medians:
+            match rate_medians.map(|rm| compute_median(&rm)).flatten() {
+                Some(r) => r * &million, /* multiply with 1000000 microCCD/CCD to convert the unit to microCCD/Eur */
                 None => {
                     log::error!("Unable to compute median for update");
                     continue;
