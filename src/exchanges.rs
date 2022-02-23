@@ -166,6 +166,7 @@ async fn request_exchange_rate_core<ResponseFormat: for<'de> crypto_common::Serd
  */
 async fn exchange_rate_getter<Fut>(
     stats: prometheus::Stats,
+    stats_label: &str,
     request_fn: impl Fn(reqwest::Client) -> Fut + Clone,
     rate_history_mutex: Arc<Mutex<VecDeque<BigRational>>>,
     pull_interval: u32,
@@ -200,7 +201,7 @@ async fn exchange_rate_getter<Fut>(
                 log::error!("Unable to INSERT new reading: {}, due to: {}", raw_rate, e)
             };
         }
-        stats.update_read_rate(raw_rate);
+        stats.update_read_rate(raw_rate, stats_label);
 
         let rate = match BigRational::from_float(raw_rate) {
             Some(r) => r,
@@ -236,6 +237,7 @@ pub async fn pull_exchange_rate(
         Exchange::Bitfinex => {
             exchange_rate_getter(
                 stats,
+                prometheus::EXCHANGE_LABEL,
                 request_exchange_rate_bitfinex,
                 rate_history,
                 pull_interval,
@@ -248,6 +250,7 @@ pub async fn pull_exchange_rate(
         Exchange::Test(url) => {
             exchange_rate_getter(
                 stats,
+                prometheus::EXCHANGE_LABEL,
                 |client| request_exchange_rate_core(client.get(url.clone()), |v: Vec<f64>| Some(v[0]), "Test exchange"),
                 rate_history,
                 pull_interval,
@@ -260,6 +263,7 @@ pub async fn pull_exchange_rate(
         Exchange::CoinGecko => {
             exchange_rate_getter(
                 stats,
+                prometheus::COINGECKO_LABEL,
                 request_exchange_rate_coingecko,
                 rate_history,
                 pull_interval,
@@ -272,6 +276,7 @@ pub async fn pull_exchange_rate(
         Exchange::LiveCoinWatch(api_key) => {
             exchange_rate_getter(
                 stats,
+                prometheus::LIVECOINWATCH_LABEL,
                 |client| request_exchange_rate_livecoinwatch(client, api_key.clone()),
                 rate_history,
                 pull_interval,
@@ -284,6 +289,7 @@ pub async fn pull_exchange_rate(
         Exchange::CoinMarketCap(api_key) => {
             exchange_rate_getter(
                 stats,
+                prometheus::COINMARKETCAP_LABEL,
                 |client| request_exchange_rate_coinmarketcap(client, api_key.clone()),
                 rate_history,
                 pull_interval,
