@@ -4,8 +4,14 @@ pub const INITIAL_RETRY_INTERVAL: u64 = 10; // seconds, when attempting to reach
                                             // unsuccessful try)
 pub const BITFINEX_URL: &str = "https://api-pub.bitfinex.com/v2/calc/fx";
 pub const LIVECOINWATCH_URL: &str = "https://api.livecoinwatch.com/coins/single";
-pub const COINGECKO_URL: &str = "https://api.coingecko.com/api/v3/simple/price?ids=concordium&vs_currencies=eur";
+pub const COINGECKO_URL: &str =
+    "https://api.coingecko.com/api/v3/simple/price?ids=concordium&vs_currencies=eur";
 pub const COINMARKETCAP_URL: &str = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest?convert=EUR&symbol=CCD&aux=tags";
+
+pub const BITFINEX_LABEL: &str = "bitfinex";
+pub const COINGECKO_LABEL: &str = "coin_gecko";
+pub const LIVECOINWATCH_LABEL: &str = "live_coin_watch";
+pub const COINMARKETCAP_LABEL: &str = "coin_market_cap";
 
 pub const FORCED_DRY_RUN_FILE: &str = "update.lockfile";
 

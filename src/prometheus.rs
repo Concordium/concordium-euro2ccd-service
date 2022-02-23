@@ -47,23 +47,27 @@ pub struct Stats {
     failed_database_updates:      IntCounter,
 }
 
-pub const EXCHANGE_LABEL: &str = "exchange";
-pub const COINGECKO_LABEL: &str = "coin_gecko";
-pub const LIVECOINWATCH_LABEL: &str = "live_coin_watch";
-pub const COINMARKETCAP_LABEL: &str = "coin_market_cap";
-
 impl Stats {
     pub fn update_read_rate(&self, rate: f64, label: &str) {
         match self.exchange_rate_read.get_metric_with_label_values(&[label]) {
             Ok(metric) => metric.set(rate),
-            Err(e) => log::warn!("Unable to update read rate to {}, on label {}, due to: {}", rate, label, e),
+            Err(e) => log::warn!(
+                "Unable to update read rate to {}, on label {}, due to: {}",
+                rate,
+                label,
+                e
+            ),
         }
     }
 
     pub fn update_updated_rate(&self, rate: &BigRational) {
         match rate.to_f64() {
             Some(f) => self.exchange_rate_updated.set(f),
-            None => log::warn!("Unable to convert updated rate {}/{} to float for Prometheus", rate.numer(), rate.denom()),
+            None => log::warn!(
+                "Unable to convert updated rate {}/{} to float for Prometheus",
+                rate.numer(),
+                rate.denom()
+            ),
         }
     }
 
@@ -81,7 +85,8 @@ impl Stats {
 pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
     let registry = Registry::new();
 
-    let exchange_rate_read_opts = prometheus::Opts::new("exchange_rate_read", "Last polled exchange rate.");
+    let exchange_rate_read_opts =
+        prometheus::Opts::new("exchange_rate_read", "Last polled exchange rate.");
     let exchange_rate_read = GaugeVec::new(exchange_rate_read_opts, &["Source"])?;
 
     let exchange_rate_updated = Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?;

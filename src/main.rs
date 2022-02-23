@@ -127,8 +127,8 @@ struct App {
     max_rates_saved: usize,
     #[structopt(
         long = "test-source",
-        help = "If set to true, pulls exchange rate from each of the given locations (see local_exchange \
-                subproject)  (FOR TESTING)",
+        help = "If set to true, pulls exchange rate from each of the given locations (see \
+                local_exchange subproject)  (FOR TESTING)",
         env = "EUR2CCD_SERVICE_TEST_EXCHANGE",
         use_delimiter = true,
         group = "testing"
@@ -159,17 +159,19 @@ struct App {
         env = "EUR2CCD_SERVICE_COIN_GECKO"
     )]
     coin_gecko: bool,
-        #[structopt(
-            long = "coin-market-cap",
-            help = "If this flag is enabled, Coin Market Cap is added to the list of sources. The value must be the API key for the site",
-            env = "EUR2CCD_SERVICE_COIN_MARKET_CAP"
-        )]
+    #[structopt(
+        long = "coin-market-cap",
+        help = "If this flag is enabled, Coin Market Cap is added to the list of sources. The \
+                value must be the API key for the site",
+        env = "EUR2CCD_SERVICE_COIN_MARKET_CAP"
+    )]
     coin_market_cap: Option<String>,
-        #[structopt(
-            long = "live_coin_watch",
-            help = "If this flag is enabled, Live Coin Watch is added to the list of sources. The value must be the API key for the site",
-            env = "EUR2CCD_SERVICE_LIVE_COIN_WATCH"
-        )]
+    #[structopt(
+        long = "live_coin_watch",
+        help = "If this flag is enabled, Live Coin Watch is added to the list of sources. The \
+                value must be the API key for the site",
+        env = "EUR2CCD_SERVICE_LIVE_COIN_WATCH"
+    )]
     live_coin_watch: Option<String>,
     #[structopt(
         long = "bitfinex",
@@ -302,7 +304,7 @@ async fn main() -> anyhow::Result<()> {
         rate_histories.push(rates_mutex.clone());
         let reader_conn = match connection_pool.clone() {
             Some(ref p) => Some(p.get_conn()?),
-            None => None
+            None => None,
         };
 
         tokio::spawn(pull_exchange_rate(
@@ -337,7 +339,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if let Some(test_sources) = app.test_source {
-        for url in test_sources  {
+        for url in test_sources {
             log::info!("Using test source: {}", url);
             add_source(Source::Test(url))?
         }
@@ -388,13 +390,17 @@ async fn main() -> anyhow::Result<()> {
 
         let rate = {
             // For each source, we compute the median of their history:
-            let rate_medians = rate_histories.iter().map(|rates_mutex| {
-                let rates_lock = rates_mutex.lock().unwrap();
-                compute_median(&*rates_lock)
-            }).collect::<Option<VecDeque<_>>>();
+            let rate_medians = rate_histories
+                .iter()
+                .map(|rates_mutex| {
+                    let rates_lock = rates_mutex.lock().unwrap();
+                    compute_median(&*rates_lock)
+                })
+                .collect::<Option<VecDeque<_>>>();
             // Then we determine the median of the medians:
             match rate_medians.map(|rm| compute_median(&rm)).flatten() {
-                Some(r) => r * &million, /* multiply with 1000000 microCCD/CCD to convert the unit to microCCD/Eur */
+                Some(r) => r * &million, /* multiply with 1000000 microCCD/CCD to convert the */
+                // unit to microCCD/Eur
                 None => {
                     log::error!("Unable to compute median for update");
                     continue;
