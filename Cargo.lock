@@ -771,6 +771,7 @@ dependencies = [
  "openssl",
  "prometheus",
  "reqwest",
+ "serde",
  "serde_json",
  "structopt",
  "tokio",

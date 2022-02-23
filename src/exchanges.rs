@@ -1,5 +1,5 @@
 use crate::{
-    config::{BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAX_RETRIES},
+    config::{BITFINEX_URL, INITIAL_RETRY_INTERVAL, MAX_RETRIES, COINGECKO_URL, COINMARKETCAP_URL, LIVECOINWATCH_URL},
     prometheus,
 };
 use num_rational::BigRational;
@@ -11,11 +11,15 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::time::{interval, sleep, Duration};
+use crypto_common::*;
 
 #[derive(Clone)]
 pub enum Exchange {
     Bitfinex,
     Test(Url),
+    CoinGecko,
+    LiveCoinWatch(String), // param is api key
+    CoinMarketCap(String), // param is api key
 }
 
 /**
@@ -54,76 +58,102 @@ where
  */
 async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> {
     let params = json!({"ccy1": "EUR", "ccy2": "CCD"});
-
-    let resp = match client.post(BITFINEX_URL).json(&params).send().await {
-        Ok(o) => o,
-        Err(e) => {
-            log::warn!("Unable to retrieve from bitfinex: {}.", e);
-            return None;
-        }
-    };
-
-    if resp.status().is_success() {
-        // Bitfinex api specifies that a successful status means the response is a json
-        // array with a single float number.
-        match resp.json::<Vec<f64>>().await {
-            Ok(v) if v.len() == 1 => {
-                let raw_rate = v[0];
-                if raw_rate < 0.0 {
-                    log::error!("Exchange rate from bitfinex is negative: {}", raw_rate);
-                    return None;
-                }
-                log::debug!("Raw exchange rate CCD/EUR polled from bitfinex: {}", raw_rate);
-                return Some(raw_rate);
-            }
-            Ok(arr) => {
-                log::error!(
-                    "Unexpected response from the exchange. Expected an array of length 1, got \
-                     array of length {}.",
-                    arr.len()
-                )
-            }
-            Err(err) => {
-                log::error!(
-                    "Unable to parse response from bitfinex as JSON (Breaking API): {}",
-                    err
-                )
-            }
-        };
-    } else {
-        log::error!("Error response from bitfinex: {}", resp.status());
-    };
-    None
+    let request = client.post(BITFINEX_URL).json(&params);
+    let parser = |v: Vec<f64>| Some(v[0]);
+    request_exchange_rate_core(request, parser, "bitfinex").await
 }
 
-/**
- * Get exchange rate from test exchange. (Should only be used for testing)
- */
-async fn request_exchange_rate_test(client: reqwest::Client, url: Url) -> Option<f64> {
-    let resp = match client.get(url.clone()).send().await {
+#[derive(SerdeDeserialize)]
+struct CoinGeckoResponseInner {
+    eur: f64
+}
+#[derive(SerdeDeserialize)]
+struct CoinGeckoResponse {
+    concordium: CoinGeckoResponseInner
+}
+
+async fn request_exchange_rate_coingecko(client: reqwest::Client) -> Option<f64> {
+    let parser = |v: CoinGeckoResponse| Some(v.concordium.eur);
+    request_exchange_rate_core(client.get(COINGECKO_URL), parser, "Coin Gecko").await
+}
+
+#[derive(SerdeDeserialize)]
+struct LiveCoinWatchResponse {
+    rate: f64
+}
+
+async fn request_exchange_rate_livecoinwatch(client: reqwest::Client, api_key: String) -> Option<f64> {
+    let params = json!({"currency":"EUR","code":"CCD","meta":false});
+    let request = client.post(LIVECOINWATCH_URL).json(&params).header("x-api-key", api_key);
+    let parser = |v: LiveCoinWatchResponse| Some(v.rate);
+    request_exchange_rate_core(request, parser, "LiveCoinWatch").await
+}
+
+#[derive(SerdeDeserialize)]
+struct CoinMarketCapResponsePrice {
+    // TODO: add other fields like volume and change
+    price: f64
+}
+
+#[derive(SerdeDeserialize)]
+struct CoinMarketCapResponseEur {
+    #[serde(rename = "EUR")]
+    eur: CoinMarketCapResponsePrice
+}
+
+#[derive(SerdeDeserialize)]
+struct CoinMarketCapResponseInfo {
+    // TODO: add other fields about CCD
+    quote: CoinMarketCapResponseEur
+}
+
+#[derive(SerdeDeserialize)]
+struct CoinMarketCapResponseData {
+    #[serde(rename = "CCD")]
+    ccd: Vec<CoinMarketCapResponseInfo>
+}
+
+#[derive(SerdeDeserialize)]
+struct CoinMarketCapResponse {
+    // TODO: add status structure
+    data: CoinMarketCapResponseData
+}
+
+async fn request_exchange_rate_coinmarketcap(client: reqwest::Client, api_key: String) -> Option<f64> {
+    let request = client.get(COINMARKETCAP_URL).header("X-CMC_PRO_API_KEY", api_key);
+    let parser = |v: CoinMarketCapResponse| Some(v.data.ccd[0].quote.eur.price);
+    request_exchange_rate_core(request, parser, "CoinMarketCap").await
+}
+
+async fn request_exchange_rate_core<ResponseFormat: for<'de> crypto_common::SerdeDeserialize<'de>>(request: reqwest::RequestBuilder, parser: impl Fn(ResponseFormat) -> Option<f64>, name: &str) -> Option<f64>  {
+    let resp = match request.send().await {
         Ok(o) => o,
         Err(e) => {
-            log::warn!("Unable to retrieve from test exchange: {:?}", e);
+            log::warn!("Unable to retrieve from {}: {:?}", name, e);
             return None;
         }
     };
     if resp.status().is_success() {
-        match resp.json::<Vec<f64>>().await {
+        match resp.json::<ResponseFormat>().await {
             Ok(v) => {
-                let raw_rate = v[0];
-                if raw_rate < 0.0 {
-                    log::error!("Exchange rate from test exchange is negative: {}", raw_rate);
-                    return None;
+                match parser(v) {
+                    Some(val) => {
+                        if val < 0.0 {
+                            log::error!("Exchange rate from  {} is negative: {}", name, val);
+                            return None;
+                        }
+                        log::debug!("Raw exchange rate CCD/EUR polled from {}: {:?}", name, val);
+                        return Some(val);
+                    },
+                    None => return None
                 }
-                log::debug!("Raw exchange rate CCD/EUR polled from test exchange: {:?}", raw_rate);
-                return Some(raw_rate);
             }
             Err(err) => {
-                log::error!("Unable to parse response from test exchange as JSON: {}", err)
+                log::error!("Unable to parse response from {} as JSON: {}", name, err)
             }
         };
     } else {
-        log::error!("Error response from test exchange: {}", resp.status());
+        log::error!("Error response from {}: {}", name, resp.status());
     };
     None
 }
@@ -218,7 +248,7 @@ pub async fn pull_exchange_rate(
         Exchange::Test(url) => {
             exchange_rate_getter(
                 stats,
-                |client| request_exchange_rate_test(client, url.clone()),
+                |client| request_exchange_rate_core(client.get(url.clone()), |v: Vec<f64>| Some(v[0]), "Test exchange"),
                 rate_history,
                 pull_interval,
                 max_rates_saved,
@@ -226,6 +256,42 @@ pub async fn pull_exchange_rate(
                 database_conn,
             )
             .await
+        }
+        Exchange::CoinGecko => {
+            exchange_rate_getter(
+                stats,
+                request_exchange_rate_coingecko,
+                rate_history,
+                pull_interval,
+                max_rates_saved,
+                client,
+                database_conn,
+            )
+                .await
+        }
+        Exchange::LiveCoinWatch(api_key) => {
+            exchange_rate_getter(
+                stats,
+                |client| request_exchange_rate_livecoinwatch(client, api_key.clone()),
+                rate_history,
+                pull_interval,
+                max_rates_saved,
+                client,
+                database_conn,
+            )
+                .await
+        }
+        Exchange::CoinMarketCap(api_key) => {
+            exchange_rate_getter(
+                stats,
+                |client| request_exchange_rate_coinmarketcap(client, api_key.clone()),
+                rate_history,
+                pull_interval,
+                max_rates_saved,
+                client,
+                database_conn,
+            )
+                .await
         }
     };
     Ok(())
@@ -237,9 +303,39 @@ mod tests {
     use tokio::time::Instant;
 
     #[tokio::test]
+    #[ignore]
+    async fn test_ping_coingecko() {
+        let client = reqwest::Client::new();
+        assert!(request_exchange_rate_coingecko(client).await.is_some())
+    }
+
+    #[tokio::test]
+    #[ignore]
     async fn test_ping_bitfinex() {
         let client = reqwest::Client::new();
         assert!(request_exchange_rate_bitfinex(client).await.is_some())
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_ping_livecoinwatch() {
+        let client = reqwest::Client::new();
+        // TODO Load api_key from parameter
+        let api_key = "INSERT KEY".to_string();
+        let result = request_exchange_rate_livecoinwatch(client, api_key).await;
+        println!("{:?}", result);
+        assert!(result.is_some())
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_ping_coinmarketcap() {
+        let client = reqwest::Client::new();
+        // TODO Load api_key from parameter
+        let api_key = "INSERT KEY".to_string();
+        let result = request_exchange_rate_coinmarketcap(client, api_key).await;
+        println!("{:?}", result);
+        assert!(result.is_some())
     }
 
     #[tokio::test]
