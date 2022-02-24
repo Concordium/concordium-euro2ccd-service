@@ -29,9 +29,11 @@ pub enum Source {
 /**
  * Wrapper for a request function, to continous attempts, with exponential
  * backoff.
+ * on_fail is invoked when the request_fn fails, but only if there is any retries left.
  */
 async fn request_with_backoff<'a, Fut: 'a, T>(
     request_fn: impl Fn() -> Fut,
+    on_fail: impl Fn(u64),
     initial_delay: u64,
     max_retries: u64,
 ) -> Option<T>
@@ -44,11 +46,12 @@ where
             return Some(i);
         }
 
-        log::warn!("Request not successful. Waiting for {} seconds until trying again", timeout);
-
         if retries == 0 {
             return None;
         }
+
+        on_fail(timeout);
+
         retries -= 1;
         sleep(Duration::from_secs(timeout)).await;
         timeout *= 2;
@@ -221,14 +224,23 @@ pub async fn pull_exchange_rate(
 
         let raw_rate = match request_with_backoff(
             || request_matcher(client.clone(), source.clone()),
+            |timeout: u64| {
+                log::warn!("{}: Request not successful. Waiting for {} seconds until trying again", source_label, timeout);
+                stats.increment_read_attempts(source_label);
+            },
             INITIAL_RETRY_INTERVAL,
             MAX_RETRIES,
         )
         .await
         {
             Some(i) => i,
-            None => continue,
+            None => {
+                log::error!("{}: Request failed. Retries exhausted", source_label);
+                stats.increment_read_attempts(source_label);
+                continue
+            },
         };
+        stats.reset_read_attempts(source_label);
 
         if let Some(ref mut conn) = database_conn {
             if let Err(e) = crate::database::write_read_rate(conn, raw_rate, source_label) {
