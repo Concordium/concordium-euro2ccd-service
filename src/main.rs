@@ -119,7 +119,7 @@ struct App {
     )]
     prometheus_port: u16,
     #[structopt(
-        long = "max_rates_saved",
+        long = "max-rates-saved",
         help = "Determines the size of the history of rates from the exchange",
         env = "EUR2CCD_SERVICE_MAX_RATES_SAVED",
         default_value = "60"
@@ -129,7 +129,7 @@ struct App {
         long = "test-source",
         help = "If set to true, pulls exchange rate from each of the given locations (see \
                 local_exchange subproject)  (FOR TESTING)",
-        env = "EUR2CCD_SERVICE_TEST_EXCHANGE",
+        env = "EUR2CCD_SERVICE_TEST_SOURCE",
         use_delimiter = true,
         group = "testing"
     )]
