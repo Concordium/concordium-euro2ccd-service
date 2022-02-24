@@ -244,7 +244,7 @@ async fn main() -> anyhow::Result<()> {
         "Warning threshold must be lower than halt threshold (increase)"
     );
     ensure!(
-        !(1..=100).contains(&app.halt_decrease_threshold),
+        (1..=100).contains(&app.halt_decrease_threshold),
         "Halt threshold (decrease) outside of allowed range (1-100): {} ",
         app.halt_decrease_threshold
     );
