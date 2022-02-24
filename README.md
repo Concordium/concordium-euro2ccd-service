@@ -36,7 +36,7 @@ Explanations of all parameters can be seen by using the help flag, i.e. `cargo r
  
 - `dry-run` (environment variable: `EUR2CCD_DRY_RUN`): Configures the service to only poll and compute the updates it would have done
 without performing them. Instead they are logged at INFO level.
-- `test-source` (environment variable: `EUR2CCD_SERVICE_TEST_SOURCE`): Comma separated URLs, which the service will add to its list of sources. (See /local_exchange for an example implementation)
+- `test-source` (environment variable: `EUR2CCD_SERVICE_TEST_SOURCE`): Comma separated URLs, which the service will add to its list of sources. (See /test-exchange for an example implementation)
 - `local-keys` (environment variable: `EUR2CCD_SERVICE_LOCAL_KEYS`): Comma separated names of files, which the service will attempt to read keys from, instead of from secrets on AWS. (Expects the files to contain arrays of keys)
 
 

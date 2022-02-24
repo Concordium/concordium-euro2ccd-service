@@ -6,9 +6,9 @@ use crate::{
     },
     prometheus,
 };
-use crypto_common::*;
 use num_rational::BigRational;
 use reqwest::Url;
+use serde::Deserialize as SerdeDeserialize;
 use serde_json::json;
 use std::{
     collections::VecDeque,
@@ -27,9 +27,10 @@ pub enum Source {
 }
 
 /**
- * Wrapper for a request function, to continous attempts, with exponential
+ * Wrapper for a request function, for continous attempts, with exponential
  * backoff.
- * on_fail is invoked when the request_fn fails, but only if there is any retries left.
+ * on_fail is invoked when the request_fn fails, but only if there is any
+ * retries left.
  */
 async fn request_with_backoff<'a, Fut: 'a, T>(
     request_fn: impl Fn() -> Fut,
@@ -59,84 +60,12 @@ where
 }
 
 /**
- * Request current exchange rate from bitfinex.
+ * Auxillery function for requesting exchange rate.
+ * Handles common behaviour among functions for requesting exchange rate.
+ * The parser should handle converting the JSON response body into an
+ * exchange rate, and its parameter specifies the expected JSON format.
  */
-async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> {
-    let params = json!({"ccy1": "CCD", "ccy2": "EUR"});
-    let request = client.post(BITFINEX_URL).json(&params);
-    let parser = |v: Vec<f64>| Some(v[0]);
-    request_exchange_rate_core(request, parser, config::BITFINEX_LABEL).await
-}
-
-#[derive(SerdeDeserialize)]
-struct CoinGeckoResponseInner {
-    eur: f64,
-}
-#[derive(SerdeDeserialize)]
-struct CoinGeckoResponse {
-    concordium: CoinGeckoResponseInner,
-}
-
-async fn request_exchange_rate_coingecko(client: reqwest::Client) -> Option<f64> {
-    let parser = |v: CoinGeckoResponse| Some(v.concordium.eur);
-    request_exchange_rate_core(client.get(COINGECKO_URL), parser, config::COINGECKO_LABEL).await
-}
-
-#[derive(SerdeDeserialize)]
-struct LiveCoinWatchResponse {
-    rate: f64,
-}
-
-async fn request_exchange_rate_livecoinwatch(
-    client: reqwest::Client,
-    api_key: String,
-) -> Option<f64> {
-    let params = json!({"currency":"EUR","code":"CCD","meta":false});
-    let request = client.post(LIVECOINWATCH_URL).json(&params).header("x-api-key", api_key);
-    let parser = |v: LiveCoinWatchResponse| Some(v.rate);
-    request_exchange_rate_core(request, parser, config::LIVECOINWATCH_LABEL).await
-}
-
-#[derive(SerdeDeserialize)]
-struct CoinMarketCapResponsePrice {
-    // TODO: add other fields like volume and change
-    price: f64,
-}
-
-#[derive(SerdeDeserialize)]
-struct CoinMarketCapResponseEur {
-    #[serde(rename = "EUR")]
-    eur: CoinMarketCapResponsePrice,
-}
-
-#[derive(SerdeDeserialize)]
-struct CoinMarketCapResponseInfo {
-    // TODO: add other fields about CCD
-    quote: CoinMarketCapResponseEur,
-}
-
-#[derive(SerdeDeserialize)]
-struct CoinMarketCapResponseData {
-    #[serde(rename = "CCD")]
-    ccd: Vec<CoinMarketCapResponseInfo>,
-}
-
-#[derive(SerdeDeserialize)]
-struct CoinMarketCapResponse {
-    // TODO: add status structure
-    data: CoinMarketCapResponseData,
-}
-
-async fn request_exchange_rate_coinmarketcap(
-    client: reqwest::Client,
-    api_key: String,
-) -> Option<f64> {
-    let request = client.get(COINMARKETCAP_URL).header("X-CMC_PRO_API_KEY", api_key);
-    let parser = |v: CoinMarketCapResponse| Some(v.data.ccd[0].quote.eur.price);
-    request_exchange_rate_core(request, parser, config::COINMARKETCAP_LABEL).await
-}
-
-async fn request_exchange_rate_core<
+async fn request_exchange_rate_aux<
     ResponseFormat: for<'de> crypto_common::SerdeDeserialize<'de>,
 >(
     request: reqwest::RequestBuilder,
@@ -174,6 +103,40 @@ async fn request_exchange_rate_core<
 }
 
 /**
+ * Request current exchange rate from bitfinex.
+ */
+async fn request_exchange_rate_bitfinex(client: reqwest::Client) -> Option<f64> {
+    let params = json!({"ccy1": "CCD", "ccy2": "EUR"});
+    let request = client.post(BITFINEX_URL).json(&params);
+    let parser = |v: Vec<f64>| Some(v[0]);
+    request_exchange_rate_aux(request, parser, config::BITFINEX_LABEL).await
+}
+
+async fn request_exchange_rate_coingecko(client: reqwest::Client) -> Option<f64> {
+    let parser = |v: CoinGeckoResponse| Some(v.concordium.eur);
+    request_exchange_rate_aux(client.get(COINGECKO_URL), parser, config::COINGECKO_LABEL).await
+}
+
+async fn request_exchange_rate_livecoinwatch(
+    client: reqwest::Client,
+    api_key: String,
+) -> Option<f64> {
+    let params = json!({"currency":"EUR","code":"CCD","meta":false});
+    let request = client.post(LIVECOINWATCH_URL).json(&params).header("x-api-key", api_key);
+    let parser = |v: LiveCoinWatchResponse| Some(v.rate);
+    request_exchange_rate_aux(request, parser, config::LIVECOINWATCH_LABEL).await
+}
+
+async fn request_exchange_rate_coinmarketcap(
+    client: reqwest::Client,
+    api_key: String,
+) -> Option<f64> {
+    let request = client.get(COINMARKETCAP_URL).header("X-CMC_PRO_API_KEY", api_key);
+    let parser = |v: CoinMarketCapResponse| Some(v.data.ccd[0].quote.eur.price);
+    request_exchange_rate_aux(request, parser, config::COINMARKETCAP_LABEL).await
+}
+
+/**
  * Pulls the exchange rate using the provided client from the given source.
  */
 async fn request_matcher(client: reqwest::Client, source: Source) -> Option<f64> {
@@ -187,16 +150,20 @@ async fn request_matcher(client: reqwest::Client, source: Source) -> Option<f64>
         }
         Source::CoinGecko => request_exchange_rate_coingecko(client).await,
         Source::Test(url) => {
-            request_exchange_rate_core(client.get(url.clone()), |v: Vec<f64>| Some(v[0]), url.as_str()).await
+            request_exchange_rate_aux(
+                client.get(url.clone()),
+                |v: Vec<f64>| Some(v[0]),
+                url.as_str(),
+            )
+            .await
         }
     }
 }
 
 /**
- * Function that continously pulls the exchange rate using request_fn, and
- * updates the given rates_mutex. Ensures that new rates doesn't deviate
- * outside allowed range. Ensures that old rates are discarded, when the
- * queue exceeds max size.
+ * Function that continously pulls the exchange rate, from the source
+ * specified, and updates the given rates_history_mutex. Ensures that old
+ * rates are discarded, when the queue exceeds max size.
  */
 pub async fn pull_exchange_rate(
     stats: prometheus::Stats,
@@ -225,7 +192,11 @@ pub async fn pull_exchange_rate(
         let raw_rate = match request_with_backoff(
             || request_matcher(client.clone(), source.clone()),
             |timeout: u64| {
-                log::warn!("{}: Request not successful. Waiting for {} seconds until trying again", source_label, timeout);
+                log::warn!(
+                    "{}: Request not successful. Waiting for {} seconds until trying again",
+                    source_label,
+                    timeout
+                );
                 stats.increment_read_attempts(source_label);
             },
             INITIAL_RETRY_INTERVAL,
@@ -237,8 +208,8 @@ pub async fn pull_exchange_rate(
             None => {
                 log::error!("{}: Request failed. Retries exhausted", source_label);
                 stats.increment_read_attempts(source_label);
-                continue
-            },
+                continue;
+            }
         };
         stats.reset_read_attempts(source_label);
 
@@ -271,6 +242,50 @@ pub async fn pull_exchange_rate(
             }
         }; // drop lock
     }
+}
+
+#[derive(SerdeDeserialize)]
+struct CoinMarketCapResponsePrice {
+    // TODO: add other fields like volume and change
+    price: f64,
+}
+
+#[derive(SerdeDeserialize)]
+struct CoinMarketCapResponseEur {
+    #[serde(rename = "EUR")]
+    eur: CoinMarketCapResponsePrice,
+}
+
+#[derive(SerdeDeserialize)]
+struct CoinMarketCapResponseInfo {
+    // TODO: add other fields about CCD
+    quote: CoinMarketCapResponseEur,
+}
+
+#[derive(SerdeDeserialize)]
+struct CoinMarketCapResponseData {
+    #[serde(rename = "CCD")]
+    ccd: Vec<CoinMarketCapResponseInfo>,
+}
+
+#[derive(SerdeDeserialize)]
+pub struct CoinMarketCapResponse {
+    // TODO: add status structure
+    data: CoinMarketCapResponseData,
+}
+
+#[derive(SerdeDeserialize)]
+struct CoinGeckoResponseInner {
+    eur: f64,
+}
+#[derive(SerdeDeserialize)]
+pub struct CoinGeckoResponse {
+    concordium: CoinGeckoResponseInner,
+}
+
+#[derive(SerdeDeserialize)]
+pub struct LiveCoinWatchResponse {
+    rate: f64,
 }
 
 #[cfg(test)]

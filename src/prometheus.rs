@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use num_rational::BigRational;
 use num_traits::ToPrimitive;
-use prometheus::{Encoder, GaugeVec, IntGaugeVec, IntCounter, IntGauge, Registry, TextEncoder};
+use prometheus::{Encoder, GaugeVec, IntCounter, IntGauge, IntGaugeVec, Registry, TextEncoder};
 use warp::{http::StatusCode, Filter};
 
 async fn handle_metrics(registry: Registry) -> Result<String> {
@@ -41,7 +41,7 @@ pub struct Stats {
     /// Number of times we failed to read from each source.
     /// Resets to 0 upon successful poll.
     /// Expects 1 label, the source's label.
-    read_attempts:              IntGaugeVec,
+    read_attempts:                IntGaugeVec,
     /// Number of times we failed to submit an update.
     /// Resets to 0 upon successful submission.
     update_attempts:              IntGauge,
@@ -66,13 +66,19 @@ impl Stats {
     }
 
     pub fn update_updated_rate(&self, rate: &BigRational) {
-        match rate.to_f64() {
-            Some(f) => self.exchange_rate_updated.with_label_values(&[]).set(f),
-            None => log::error!(
+        if let Some(rate_float) = rate.to_f64() {
+            match self.exchange_rate_updated.get_metric_with_label_values(&[]) {
+                Ok(metric) => metric.set(rate_float),
+                Err(e) => {
+                    log::error!("Unable to update rate, due to: {}", e)
+                }
+            }
+        } else {
+            log::error!(
                 "Unable to convert updated rate {}/{} to float for Prometheus",
                 rate.numer(),
                 rate.denom()
-            ),
+            );
         }
     }
 
@@ -81,22 +87,18 @@ impl Stats {
     pub fn increment_read_attempts(&self, label: &str) {
         match self.read_attempts.get_metric_with_label_values(&[label]) {
             Ok(metric) => metric.inc(),
-            Err(e) => log::error!(
-                "Unable to increment read attempts on label {}, due to: {}",
-                label,
-                e
-            ),
+            Err(e) => {
+                log::error!("Unable to increment read attempts on label {}, due to: {}", label, e)
+            }
         }
     }
 
     pub fn reset_read_attempts(&self, label: &str) {
         match self.read_attempts.get_metric_with_label_values(&[label]) {
             Ok(metric) => metric.set(0),
-            Err(e) => log::error!(
-                "Unable to reset read attempts on label {}, due to: {}",
-                label,
-                e
-            ),
+            Err(e) => {
+                log::error!("Unable to reset read attempts on label {}, due to: {}", label, e)
+            }
         }
     }
 
@@ -112,14 +114,22 @@ impl Stats {
 pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
     let registry = Registry::new();
 
-    let exchange_rate_read = GaugeVec::new(prometheus::Opts::new("exchange_rate_read", "Last polled exchange rate."), &["Source"])?;
-    let exchange_rate_updated = GaugeVec::new(prometheus::Opts::new("exchange_rate_updated", "Last updated exchange rate."), &[])?;
+    let exchange_rate_read = GaugeVec::new(
+        prometheus::Opts::new("exchange_rate_read", "Last polled exchange rate."),
+        &["Source"],
+    )?;
+    let exchange_rate_updated = GaugeVec::new(
+        prometheus::Opts::new("exchange_rate_updated", "Last updated exchange rate."),
+        &[],
+    )?;
     let warning_threshold_violations = IntCounter::new(
         "warning_threshold_violations",
         "Amount of times an update has been outside the warning threshold.",
     )?;
-    let read_attempts =
-        IntGaugeVec::new(prometheus::Opts::new("failed_reads", "Amount of times reading from a source has failed."), &["Source"])?;
+    let read_attempts = IntGaugeVec::new(
+        prometheus::Opts::new("failed_reads", "Amount of times reading from a source has failed."),
+        &["Source"],
+    )?;
     let update_attempts =
         IntGauge::new("failed_submissions", "Amount of times submitting an update has failed.")?;
     let protected = IntGauge::new(

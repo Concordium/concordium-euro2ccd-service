@@ -1,21 +1,21 @@
 mod config;
 mod database;
-mod sources;
 mod helpers;
 mod node;
 mod prometheus;
 mod secretsmanager;
+mod sources;
 
 use anyhow::{bail, Context};
 use clap::AppSettings;
 use concordium_rust_sdk::endpoints;
 use config::MAX_TIME_CHECK_SUBMISSION;
-use sources::{pull_exchange_rate, Source};
 use helpers::{compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_change};
 use node::{check_update_status, get_block_summary, get_node_client, send_update};
 use num_rational::BigRational;
 use reqwest::Url;
 use secretsmanager::{get_governance_from_aws, get_governance_from_file};
+use sources::{pull_exchange_rate, Source};
 use std::{
     collections::VecDeque,
     fs::File,
@@ -211,6 +211,8 @@ async fn main() -> anyhow::Result<()> {
         let matches = app.get_matches();
         App::from_clap(&matches)
     };
+    let max_rates_saved = app.max_rates_saved;
+    let pull_interval = app.pull_interval;
 
     // Setup
     // (Stop if error occurs)
@@ -232,8 +234,8 @@ async fn main() -> anyhow::Result<()> {
     );
     log::debug!(
         "Pulling rates every {} seconds. (Max {} rates are saved at a time)",
-        app.pull_interval,
-        app.max_rates_saved
+        pull_interval,
+        max_rates_saved
     );
 
     anyhow::ensure!(!app.endpoint.is_empty(), "At least one node must be provided.");
@@ -257,7 +259,7 @@ async fn main() -> anyhow::Result<()> {
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
 
     let (mut main_database_conn, connection_pool) = {
-        if let Some(ref url) = app.database_url {
+        if let Some(url) = app.database_url {
             let pool = database::establish_connection_pool(&url)?;
             let mut main_conn = pool.get_conn()?;
             database::create_tables(&mut main_conn)?;
@@ -296,12 +298,11 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let mut rate_histories = Vec::new();
-    let max_rates_saved = app.max_rates_saved;
-    let pull_interval = app.pull_interval;
 
     let mut add_source = |source: Source| -> anyhow::Result<()> {
         let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(max_rates_saved)));
         rate_histories.push(rates_mutex.clone());
+        // Create a connection for this reader thread, if a database was
         let reader_conn = match connection_pool.clone() {
             Some(ref p) => Some(p.get_conn()?),
             None => None,
