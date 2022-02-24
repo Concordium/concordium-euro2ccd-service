@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use num_rational::BigRational;
 use num_traits::ToPrimitive;
-use prometheus::{Encoder, Gauge, GaugeVec, IntCounter, IntGauge, Registry, TextEncoder};
+use prometheus::{Encoder, GaugeVec, IntCounter, IntGauge, Registry, TextEncoder};
 use warp::{http::StatusCode, Filter};
 
 async fn handle_metrics(registry: Registry) -> Result<String> {
@@ -31,10 +31,10 @@ pub async fn serve_prometheus(registry: Registry, port: u16) {
 
 #[derive(Debug, Clone)]
 pub struct Stats {
-    /// The last exchange rate read from bitfinex.
+    /// The last exchange rate read from each source. Expects 1 label, the source's label.
     exchange_rate_read:           GaugeVec,
-    /// The last exchange rate read from bitfinex.
-    exchange_rate_updated:        Gauge,
+    /// The value of the last exchange rate update performed on chain.
+    exchange_rate_updated:        GaugeVec,
     /// Number of times an update has been outside the warning threshold.
     warning_threshold_violations: IntCounter,
     /// Number of times we failed to submit an update.
@@ -62,7 +62,7 @@ impl Stats {
 
     pub fn update_updated_rate(&self, rate: &BigRational) {
         match rate.to_f64() {
-            Some(f) => self.exchange_rate_updated.set(f),
+            Some(f) => self.exchange_rate_updated.with_label_values(&[]).set(f),
             None => log::warn!(
                 "Unable to convert updated rate {}/{} to float for Prometheus",
                 rate.numer(),
@@ -89,7 +89,7 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
         prometheus::Opts::new("exchange_rate_read", "Last polled exchange rate.");
     let exchange_rate_read = GaugeVec::new(exchange_rate_read_opts, &["Source"])?;
 
-    let exchange_rate_updated = Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?;
+    let exchange_rate_updated = GaugeVec::new(prometheus::Opts::new("exchange_rate_updated", "Last updated exchange rate."), &[])?;
     let warning_threshold_violations = IntCounter::new(
         "warning_threshold_violations",
         "Amount of times an update has been outside the warning threshold.",
