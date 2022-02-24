@@ -138,12 +138,12 @@ async fn request_exchange_rate_core<
 >(
     request: reqwest::RequestBuilder,
     parser: impl Fn(ResponseFormat) -> Option<f64>,
-    name: &str,
+    source_label: &str,
 ) -> Option<f64> {
     let resp = match request.send().await {
         Ok(o) => o,
         Err(e) => {
-            log::warn!("{}: Unable to send request: {}", name, e);
+            log::warn!("{}: Unable to send request: {}", source_label, e);
             return None;
         }
     };
@@ -152,20 +152,20 @@ async fn request_exchange_rate_core<
             Ok(v) => match parser(v) {
                 Some(val) => {
                     if val < 0.0 {
-                        log::error!("{}: Exchange rate is negative: {}", name, val);
+                        log::error!("{}: Exchange rate is negative: {}", source_label, val);
                         return None;
                     }
-                    log::debug!("{}: Raw exchange rate CCD in EUR polled: {}", name, val);
+                    log::debug!("{}: Raw exchange rate CCD in EUR polled: {}", source_label, val);
                     return Some(val);
                 }
                 None => return None,
             },
             Err(err) => {
-                log::error!("{}: Unable to parse response as JSON: {}", name, err)
+                log::error!("{}: Unable to parse response as JSON: {}", source_label, err)
             }
         };
     } else {
-        log::error!("{}: unsuccessful response: {}", name, resp.status());
+        log::error!("{}: unsuccessful response: {}", source_label, resp.status());
     };
     None
 }
@@ -204,7 +204,7 @@ pub async fn pull_exchange_rate(
     mut database_conn: Option<mysql::PooledConn>,
 ) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
-    let stats_label = match source {
+    let source_label = match source {
         Source::Bitfinex => config::BITFINEX_LABEL,
         Source::LiveCoinWatch(_) => config::LIVECOINWATCH_LABEL,
         Source::CoinMarketCap(_) => config::COINMARKETCAP_LABEL,
@@ -217,7 +217,7 @@ pub async fn pull_exchange_rate(
 
     loop {
         interval.tick().await;
-        log::debug!("{}: Polling for exchange rate", stats_label);
+        log::debug!("{}: Polling for exchange rate", source_label);
 
         let raw_rate = match request_with_backoff(
             || request_matcher(client.clone(), source.clone()),
@@ -231,26 +231,26 @@ pub async fn pull_exchange_rate(
         };
 
         if let Some(ref mut conn) = database_conn {
-            if let Err(e) = crate::database::write_read_rate(conn, raw_rate) {
+            if let Err(e) = crate::database::write_read_rate(conn, raw_rate, source_label) {
                 stats.increment_failed_database_updates();
                 log::error!(
                     "{}: Unable to INSERT new reading: {}, due to: {}",
-                    stats_label,
+                    source_label,
                     raw_rate,
                     e
                 )
             };
         }
-        stats.update_read_rate(raw_rate, &stats_label);
+        stats.update_read_rate(raw_rate, &source_label);
 
         let rate = match BigRational::from_float(raw_rate) {
             Some(r) => r.recip(), // Get the inverse value, to change units from EUR/CCD to CCD/EUR
             None => {
-                log::error!("{}: Unable to convert rate to rational: {}", stats_label, raw_rate);
+                log::error!("{}: Unable to convert rate to rational: {}", source_label, raw_rate);
                 continue;
             }
         };
-        log::info!("{}: New exchange rate polled: {}/{}", stats_label, rate.numer(), rate.denom());
+        log::info!("{}: New exchange rate polled: {}/{}", source_label, rate.numer(), rate.denom());
         {
             let mut rates = rate_history_mutex.lock().unwrap();
             rates.push_back(rate);

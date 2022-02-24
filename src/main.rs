@@ -167,7 +167,7 @@ struct App {
     )]
     coin_market_cap: Option<String>,
     #[structopt(
-        long = "live_coin_watch",
+        long = "live-coin-watch",
         help = "If this flag is enabled, Live Coin Watch is added to the list of sources. The \
                 value must be the API key for the site",
         env = "EUR2CCD_SERVICE_LIVE_COIN_WATCH"
