@@ -210,7 +210,7 @@ mod tests {
                 v,
                 BigRational::new(5589266897157983u64.into(), 144115188075855872u128.into())
             ),
-            None => assert!(false),
+            None => panic!("unexpeced missing result"),
         }
     }
 
@@ -233,7 +233,7 @@ mod tests {
                 v,
                 BigRational::new(1395363619354721u64.into(), 36028797018963968u128.into())
             ),
-            None => assert!(false),
+            None => panic!("unexpeced missing result"),
         }
     }
 
@@ -256,7 +256,7 @@ mod tests {
                 v,
                 BigRational::new(5506557615068859u64.into(), 144115188075855872u128.into())
             ),
-            None => assert!(false),
+            None => panic!("unexpeced missing result"),
         }
     }
 

@@ -329,7 +329,7 @@ mod tests {
         let dummy_req = || futures::future::ready::<Option<()>>(None);
 
         let start = Instant::now();
-        request_with_backoff(dummy_req, 10, 1).await;
+        request_with_backoff(dummy_req, |_| {}, 10, 1).await;
         let duration = start.elapsed();
         assert!(duration <= std::time::Duration::from_secs(30)); // 10 + 20
     }
@@ -339,7 +339,7 @@ mod tests {
         let dummy_req = || futures::future::ready::<Option<()>>(None);
 
         let start = Instant::now();
-        request_with_backoff(dummy_req, 10, 2).await;
+        request_with_backoff(dummy_req, |_| {}, 10, 2).await;
         let duration = start.elapsed();
         assert!(duration >= std::time::Duration::from_secs(30)); // 10 + 20
     }
