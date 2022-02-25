@@ -66,8 +66,8 @@ struct App {
     )]
     update_interval: u32,
     #[structopt(
-        long = "pull-exchange-interval",
-        help = "How often to pull new exchange rate from exchange. (In seconds)",
+        long = "pull-interval",
+        help = "How often to pull new exchange rate from each source. (In seconds)",
         env = "EUR2CCD_SERVICE_PULL_INTERVAL",
         default_value = "60"
     )]
@@ -340,9 +340,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if let Some(test_sources) = app.test_source {
-        for url in test_sources {
-            log::info!("Using test source: {}", url);
-            add_source(Source::Test(url))?
+        for (i, url) in test_sources.into_iter().enumerate() {
+            log::info!("Using test source: {}, as test{}", url, i);
+            add_source(Source::Test(url, format!("test{}", i)))?
         }
     }
 

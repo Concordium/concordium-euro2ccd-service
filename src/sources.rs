@@ -20,7 +20,7 @@ use tokio::time::{interval, sleep, Duration};
 #[derive(Clone)]
 pub enum Source {
     Bitfinex,
-    Test(Url),
+    Test(Url, String),
     CoinGecko,
     LiveCoinWatch(String), // param is api key
     CoinMarketCap(String), // param is api key
@@ -149,13 +149,8 @@ async fn request_matcher(client: reqwest::Client, source: Source) -> Option<f64>
             request_exchange_rate_coinmarketcap(client, api_key).await
         }
         Source::CoinGecko => request_exchange_rate_coingecko(client).await,
-        Source::Test(url) => {
-            request_exchange_rate_aux(
-                client.get(url.clone()),
-                |v: Vec<f64>| Some(v[0]),
-                url.as_str(),
-            )
-            .await
+        Source::Test(url, id) => {
+            request_exchange_rate_aux(client.get(url.clone()), |v: Vec<f64>| Some(v[0]), &id).await
         }
     }
 }
@@ -179,7 +174,7 @@ pub async fn pull_exchange_rate(
         Source::LiveCoinWatch(_) => config::LIVECOINWATCH_LABEL,
         Source::CoinMarketCap(_) => config::COINMARKETCAP_LABEL,
         Source::CoinGecko => config::COINGECKO_LABEL,
-        Source::Test(ref url) => url.as_str(),
+        Source::Test(_, ref id) => &id,
     };
 
     let mut interval = interval(Duration::from_secs(pull_interval.into()));
