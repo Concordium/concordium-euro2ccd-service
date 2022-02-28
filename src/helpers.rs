@@ -204,8 +204,7 @@ mod tests {
         v.push_back(BigRational::from_float(0.03878333));
         v.push_back(BigRational::from_float(0.03878333));
         v.push_back(BigRational::from_float(0.03893119));
-        match v.into_iter().collect::<Option<VecDeque<_>>>().map(|rm| compute_median(&rm)).flatten()
-        {
+        match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
             Some(v) => assert_eq!(
                 v,
                 BigRational::new(5589266897157983u64.into(), 144115188075855872u128.into())
@@ -227,8 +226,7 @@ mod tests {
         v.push_back(BigRational::from_float(0.03871499568024753));
         v.push_back(BigRational::from_float(0.03878131780389962));
         v.push_back(BigRational::from_float(0.03882990048880441));
-        match v.into_iter().collect::<Option<VecDeque<_>>>().map(|rm| compute_median(&rm)).flatten()
-        {
+        match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
             Some(v) => assert_eq!(
                 v,
                 BigRational::new(1395363619354721u64.into(), 36028797018963968u128.into())
@@ -250,8 +248,7 @@ mod tests {
         v.push_back(BigRational::from_float(0.0382987008046979));
         v.push_back(BigRational::from_float(0.03829543671546038));
         v.push_back(BigRational::from_float(0.03838764088740058));
-        match v.into_iter().collect::<Option<VecDeque<_>>>().map(|rm| compute_median(&rm)).flatten()
-        {
+        match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
             Some(v) => assert_eq!(
                 v,
                 BigRational::new(5506557615068859u64.into(), 144115188075855872u128.into())

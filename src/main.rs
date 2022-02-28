@@ -6,7 +6,7 @@ mod prometheus;
 mod secretsmanager;
 mod sources;
 
-use anyhow::{bail, Context};
+use anyhow::{ensure, Context};
 use clap::AppSettings;
 use concordium_rust_sdk::endpoints;
 use config::MAX_TIME_CHECK_SUBMISSION;
@@ -133,7 +133,7 @@ struct App {
         use_delimiter = true,
         group = "testing"
     )]
-    test_source: Option<Vec<Url>>,
+    test_sources: Vec<Url>,
     #[structopt(
         long = "local-keys",
         help = "If given, the service uses local governance keys in specified file instead of \
@@ -161,15 +161,15 @@ struct App {
     coin_gecko: bool,
     #[structopt(
         long = "coin-market-cap",
-        help = "If this flag is enabled, Coin Market Cap is added to the list of sources. The \
-                value must be the API key for the site",
+        help = "This option expects an API key for Coin Market Cap, and if given Coin Market Cap \
+                is added to the list of sources.",
         env = "EUR2CCD_SERVICE_COIN_MARKET_CAP"
     )]
     coin_market_cap: Option<String>,
     #[structopt(
         long = "live-coin-watch",
-        help = "If this flag is enabled, Live Coin Watch is added to the list of sources. The \
-                value must be the API key for the site",
+        help = "This option expects an API key for Live Coin Watch, and if given Live Coin Watch \
+                is added to the list of sources.",
         env = "EUR2CCD_SERVICE_LIVE_COIN_WATCH"
     )]
     live_coin_watch: Option<String>,
@@ -238,23 +238,20 @@ async fn main() -> anyhow::Result<()> {
         max_rates_saved
     );
 
-    anyhow::ensure!(!app.endpoint.is_empty(), "At least one node must be provided.");
-
-    if app.halt_increase_threshold <= app.warning_increase_threshold {
-        log::error!("Warning threshold must be lower than halt threshold (increase)");
-        bail!("Error during startup");
-    }
-    if !(1..=100).contains(&app.halt_decrease_threshold) {
-        log::error!(
-            "Halt threshold (decrease) outside of allowed range (1-100): {} ",
-            app.halt_decrease_threshold
-        );
-        bail!("Error during startup");
-    }
-    if app.halt_decrease_threshold <= app.warning_decrease_threshold {
-        log::error!("Warning threshold must be lower than halt threshold (decrease)");
-        bail!("Error during startup");
-    }
+    ensure!(!app.endpoint.is_empty(), "At least one node must be provided.");
+    ensure!(
+        app.halt_increase_threshold > app.warning_increase_threshold,
+        "Warning threshold must be lower than halt threshold (increase)"
+    );
+    ensure!(
+        !(1..=100).contains(&app.halt_decrease_threshold),
+        "Halt threshold (decrease) outside of allowed range (1-100): {} ",
+        app.halt_decrease_threshold
+    );
+    ensure!(
+        app.halt_decrease_threshold > app.warning_decrease_threshold,
+        "Warning threshold must be lower than halt threshold (decrease)"
+    );
 
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
 
@@ -297,12 +294,14 @@ async fn main() -> anyhow::Result<()> {
         initial_rate.numerator as f64 / initial_rate.denominator as f64
     );
 
-    let mut rate_histories = Vec::new();
+    // Vector that stores the rate history for each source. Each history is a queue
+    // in a mutex.
+    let mut rate_histories: Vec<Arc<Mutex<VecDeque<BigRational>>>> = Vec::new();
 
     let mut add_source = |source: Source| -> anyhow::Result<()> {
         let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(max_rates_saved)));
         rate_histories.push(rates_mutex.clone());
-        // Create a connection for this reader thread, if a database was
+        // Create a connection for this reader thread, if a database url was provided:
         let reader_conn = match connection_pool.clone() {
             Some(ref p) => Some(p.get_conn()?),
             None => None,
@@ -339,17 +338,15 @@ async fn main() -> anyhow::Result<()> {
         add_source(Source::LiveCoinWatch(api_key))?
     }
 
-    if let Some(test_sources) = app.test_source {
-        for (i, url) in test_sources.into_iter().enumerate() {
-            log::info!("Using test source: {}, as test{}", url, i);
-            add_source(Source::Test(url, format!("test{}", i)))?
-        }
+    for (i, url) in app.test_sources.into_iter().enumerate() {
+        log::info!("Using test source: {}, as test{}", url, i);
+        add_source(Source::Test {
+            url,
+            label: format!("test{}", i),
+        })?
     }
 
-    if rate_histories.is_empty() {
-        log::error!("No sources was chosen");
-        bail!("Error during startup");
-    }
+    ensure!(!rate_histories.is_empty(), "At least one source must be chosen.");
 
     let forced_dry_run = is_dry_run_forced();
     if forced_dry_run {
@@ -363,7 +360,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         log::debug!("Running wet run!");
         let secret_keys = if app.local_keys.is_empty() {
-            anyhow::ensure!(
+            ensure!(
                 !app.secret_names.is_empty(),
                 "If `dry-run` is not used then one of `secret-names` and `local-keys` must be \
                  provided."
@@ -399,7 +396,7 @@ async fn main() -> anyhow::Result<()> {
                 })
                 .collect::<Option<VecDeque<_>>>();
             // Then we determine the median of the medians:
-            match rate_medians.map(|rm| compute_median(&rm)).flatten() {
+            match rate_medians.and_then(|rm| compute_median(&rm)) {
                 Some(r) => r * &million, /* multiply with 1000000 microCCD/CCD to convert the */
                 // unit to microCCD/Eur
                 None => {

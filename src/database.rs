@@ -1,3 +1,4 @@
+use crate::Source;
 use concordium_rust_sdk::types::ExchangeRate;
 use mysql::{params, prelude::Queryable, Opts, Pool, PooledConn};
 
@@ -37,11 +38,11 @@ pub fn create_tables(conn: &mut PooledConn) -> anyhow::Result<()> {
     }
 }
 
-pub fn write_read_rate(conn: &mut PooledConn, value: f64, label: &str) -> mysql::Result<()> {
+pub fn write_read_rate(conn: &mut PooledConn, value: f64, label: &Source) -> mysql::Result<()> {
     let statement = conn.prep(READ_RATE_STATEMENT)?;
     conn.exec_drop(statement, params! {
         "timestamp" => chrono::offset::Utc::now().naive_utc(),
-        "label" => label,
+        "label" => label.to_string(),
         "value" => value,
     })
 }

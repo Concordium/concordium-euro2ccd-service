@@ -8,11 +8,6 @@ pub const COINGECKO_URL: &str =
     "https://api.coingecko.com/api/v3/simple/price?ids=concordium&vs_currencies=eur";
 pub const COINMARKETCAP_URL: &str = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest?convert=EUR&symbol=CCD&aux=tags";
 
-pub const BITFINEX_LABEL: &str = "bitfinex";
-pub const COINGECKO_LABEL: &str = "coin_gecko";
-pub const LIVECOINWATCH_LABEL: &str = "live_coin_watch";
-pub const COINMARKETCAP_LABEL: &str = "coin_market_cap";
-
 pub const FORCED_DRY_RUN_FILE: &str = "update.lockfile";
 
 pub const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 5; // seconds

@@ -1,3 +1,4 @@
+use crate::Source;
 use anyhow::{Context, Result};
 use num_rational::BigRational;
 use num_traits::ToPrimitive;
@@ -31,8 +32,8 @@ pub async fn serve_prometheus(registry: Registry, port: u16) {
 
 #[derive(Debug, Clone)]
 pub struct Stats {
-    /// The last exchange rate read from each source.
-    /// Expects 1 label, the source's label.
+    /// The last exchange rate read from each source. The metrics inside have 1
+    /// variable label, which denotes the source.
     exchange_rate_read:           GaugeVec,
     /// The value of the last exchange rate update performed on chain.
     exchange_rate_updated:        GaugeVec,
@@ -53,8 +54,8 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn update_read_rate(&self, rate: f64, label: &str) {
-        match self.exchange_rate_read.get_metric_with_label_values(&[label]) {
+    pub fn update_read_rate(&self, rate: f64, label: &Source) {
+        match self.exchange_rate_read.get_metric_with_label_values(&[&label.to_string()]) {
             Ok(metric) => metric.set(rate),
             Err(e) => log::error!(
                 "Unable to update read rate to {}, on label {}, due to: {}",
@@ -84,8 +85,8 @@ impl Stats {
 
     pub fn increment_warning_threshold_violations(&self) { self.warning_threshold_violations.inc() }
 
-    pub fn increment_read_attempts(&self, label: &str) {
-        match self.read_attempts.get_metric_with_label_values(&[label]) {
+    pub fn increment_read_attempts(&self, label: &Source) {
+        match self.read_attempts.get_metric_with_label_values(&[&label.to_string()]) {
             Ok(metric) => metric.inc(),
             Err(e) => {
                 log::error!("Unable to increment read attempts on label {}, due to: {}", label, e)
@@ -93,8 +94,8 @@ impl Stats {
         }
     }
 
-    pub fn reset_read_attempts(&self, label: &str) {
-        match self.read_attempts.get_metric_with_label_values(&[label]) {
+    pub fn reset_read_attempts(&self, label: &Source) {
+        match self.read_attempts.get_metric_with_label_values(&[&label.to_string()]) {
             Ok(metric) => metric.set(0),
             Err(e) => {
                 log::error!("Unable to reset read attempts on label {}, due to: {}", label, e)
