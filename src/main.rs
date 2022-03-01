@@ -126,10 +126,10 @@ struct App {
     )]
     max_rates_saved: usize,
     #[structopt(
-        long = "test-source",
+        long = "test-sources",
         help = "If set to true, pulls exchange rate from each of the given locations (see \
                 local_exchange subproject)  (FOR TESTING)",
-        env = "EUR2CCD_SERVICE_TEST_SOURCE",
+        env = "EUR2CCD_SERVICE_TEST_SOURCES",
         use_delimiter = true,
         group = "testing"
     )]
