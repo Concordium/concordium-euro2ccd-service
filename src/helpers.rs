@@ -1,5 +1,7 @@
-use concordium_rust_sdk::types::{BlockSummary, ExchangeRate, UpdateKeysIndex};
-use crypto_common::{base16_encode_string, types::KeyPair};
+use concordium_rust_sdk::{
+    common::{base16_encode_string, types::KeyPair},
+    types::{BlockSummary, ExchangeRate, UpdateKeysIndex},
+};
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_rational::BigRational;
@@ -230,10 +232,9 @@ mod tests {
         v.push_back(BigRational::from_float(0.03878131780389962));
         v.push_back(BigRational::from_float(0.03882990048880441));
         match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
-            Some(v) => assert_eq!(
-                v,
-                (median_part_1 + median_part_2) / BigRational::from_integer(2.into())
-            ),
+            Some(v) => {
+                assert_eq!(v, (median_part_1 + median_part_2) / BigRational::from_integer(2.into()))
+            }
             None => panic!("unexpeced missing result"),
         }
     }
@@ -254,10 +255,9 @@ mod tests {
         v.push_back(BigRational::from_float(0.03829543671546038));
         v.push_back(BigRational::from_float(0.03838764088740058));
         match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
-            Some(v) => assert_eq!(
-                v,
-                (median_part_1 + median_part_2) / BigRational::from_integer(2.into())
-            ),
+            Some(v) => {
+                assert_eq!(v, (median_part_1 + median_part_2) / BigRational::from_integer(2.into()))
+            }
             None => panic!("unexpeced missing result"),
         }
     }
