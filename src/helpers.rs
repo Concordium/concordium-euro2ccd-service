@@ -264,14 +264,21 @@ mod tests {
 
     #[test]
     fn test_compute_median_of_medians() {
+        let median_1 = BigRational::from_float(0.03878333).unwrap();
+        let median_2_part_1 = BigRational::from_float(0.038753264437224634).unwrap();
+        let median_2_part_2 = BigRational::from_float(0.0387291204482976).unwrap();
+        let median_2 = (median_2_part_1 + median_2_part_2) / BigRational::from_integer(2.into());
+        let median_3_part_1 = BigRational::from_float(0.03828436591897897).unwrap();
+        let median_3_part_2 = BigRational::from_float(0.03820941906671523).unwrap();
+        let median_3 = (median_3_part_1 + median_3_part_2) / BigRational::from_integer(2.into());
         // These values are the results from previous tests
         let mut v = VecDeque::new();
-        v.push_back(BigRational::new(5589266897157983u64.into(), 144115188075855872u128.into()));
-        v.push_back(BigRational::new(1395363619354721u64.into(), 36028797018963968u128.into()));
-        v.push_back(BigRational::new(5506557615068859u64.into(), 144115188075855872u128.into()));
+        v.push_back(median_1);
+        v.push_back(median_2.clone());
+        v.push_back(median_3);
         assert_eq!(
             compute_median(&v),
-            Some(BigRational::new(1395363619354721u64.into(), 36028797018963968u128.into()))
+            Some(median_2)
         )
     }
 

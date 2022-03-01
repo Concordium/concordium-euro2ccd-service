@@ -116,7 +116,7 @@ impl RequestExchangeRate for Source {
 /**
  * Wrapper for a request function, for continous attempts, with exponential
  * backoff.
- * on_fail is invoked when the request_fn fails, but only if there are any
+ * on_fail is invoked after every failed attempt of the request, but only if there are any
  * retries left.
  */
 async fn request_with_backoff<'a, Fut: 'a, T>(
