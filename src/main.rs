@@ -15,7 +15,7 @@ use node::{check_update_status, get_block_summary, get_node_client, send_update}
 use num_rational::BigRational;
 use reqwest::Url;
 use secretsmanager::{get_governance_from_aws, get_governance_from_file};
-use sources::{pull_exchange_rate, Source};
+use sources::{pull_exchange_rate, RateHistory, Source};
 use std::{
     collections::VecDeque,
     fs::File,
@@ -296,10 +296,14 @@ async fn main() -> anyhow::Result<()> {
 
     // Vector that stores the rate history for each source. Each history is a queue
     // in a mutex.
-    let mut rate_histories: Vec<Arc<Mutex<VecDeque<BigRational>>>> = Vec::new();
+    let mut rate_histories: Vec<Arc<Mutex<RateHistory>>> = Vec::new();
+    let mut last_update_timestamp: i64 = 1;
 
     let mut add_source = |source: Source| -> anyhow::Result<()> {
-        let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(max_rates_saved)));
+        let rates_mutex = Arc::new(Mutex::new(RateHistory {
+            rates:                  VecDeque::with_capacity(max_rates_saved),
+            last_reading_timestamp: 0,
+        }));
         rate_histories.push(rates_mutex.clone());
         // Create a connection for this reader thread, if a database url was provided:
         let reader_conn = match connection_pool.clone() {
@@ -385,18 +389,39 @@ async fn main() -> anyhow::Result<()> {
     'main: loop {
         log::debug!("Starting new main loop cycle: waiting for interval");
         interval.tick().await;
-
         let rate = {
             // For each source, we compute the median of their history:
             let rate_medians = rate_histories
                 .iter()
                 .map(|rates_mutex| {
-                    let rates_lock = rates_mutex.lock().unwrap();
-                    compute_median(&*rates_lock)
+                    let rates_history = rates_mutex.lock().unwrap();
+                    if rates_history.last_reading_timestamp == 0 {
+                        log::warn!("A source was dropped for update, no successful readings");
+                        None
+                    } else if rates_history.last_reading_timestamp < last_update_timestamp {
+                        log::warn!(
+                            "A source was dropped for update, last succesful reading was at {}",
+                            chrono::NaiveDateTime::from_timestamp(
+                                rates_history.last_reading_timestamp,
+                                0
+                            )
+                        );
+                        None
+                    } else {
+                        compute_median(&rates_history.rates)
+                    }
                 })
+                .filter(|rm| rm.is_some())
                 .collect::<Option<VecDeque<_>>>();
             // Then we determine the median of the medians:
-            match rate_medians.and_then(|rm| compute_median(&rm)) {
+            match rate_medians.and_then(|rm| {
+                if rm.is_empty() {
+                    log::error!("Skipping update, due to no sources have new readings");
+                    None
+                } else {
+                    compute_median(&rm)
+                }
+            }) {
                 Some(r) => r * &million, /* multiply with 1000000 microCCD/CCD to convert the */
                 // unit to microCCD/Eur
                 None => {
@@ -406,6 +431,9 @@ async fn main() -> anyhow::Result<()> {
             }
         }; // drop lock
         log::debug!("Computed median: {} microCCD/Eur", rate);
+
+        // Update the timestamp for the next update
+        last_update_timestamp = chrono::offset::Utc::now().timestamp();
 
         // Calculates the relative change from the prev_rate, which should be the
         // current exchange rate on chain, and our proposed update:

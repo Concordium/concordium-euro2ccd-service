@@ -2,7 +2,9 @@ use crate::Source;
 use anyhow::{Context, Result};
 use num_rational::BigRational;
 use num_traits::ToPrimitive;
-use prometheus::{Encoder, Gauge,GaugeVec, IntCounter, IntGauge, IntGaugeVec, Registry, TextEncoder};
+use prometheus::{
+    Encoder, Gauge, GaugeVec, IntCounter, IntGauge, IntGaugeVec, Registry, TextEncoder,
+};
 use warp::{http::StatusCode, Filter};
 
 async fn handle_metrics(registry: Registry) -> Result<String> {
@@ -30,15 +32,14 @@ pub async fn serve_prometheus(registry: Registry, port: u16) {
     warp::serve(metrics_route).run(([0, 0, 0, 0], port)).await;
 }
 
-/// A wrapper for a prometheus Gauge, which won't let the Gauge be collected when it is zero.
+/// A wrapper for a prometheus Gauge, which won't let the Gauge be collected
+/// when it is zero.
 #[derive(Debug, Clone)]
 struct HidingGaugeCollector {
     gauge: Gauge,
 }
 impl prometheus::core::Collector for HidingGaugeCollector {
-    fn desc(&self) -> Vec<&prometheus::core::Desc> {
-        self.gauge.desc()
-    }
+    fn desc(&self) -> Vec<&prometheus::core::Desc> { self.gauge.desc() }
 
     fn collect(&self) -> Vec<prometheus::proto::MetricFamily> {
         if self.gauge.get() == 0.0 {
@@ -133,9 +134,7 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
         prometheus::Opts::new("exchange_rate_read", "Last polled exchange rate."),
         &["Source"],
     )?;
-    let exchange_rate_updated = Gauge::new(
-        "exchange_rate_updated", "Last updated exchange rate."
-    )?;
+    let exchange_rate_updated = Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?;
     let warning_threshold_violations = IntCounter::new(
         "warning_threshold_violations",
         "Amount of times an update has been outside the warning threshold.",
@@ -155,7 +154,9 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
         "Amount of times writing to the database has failed.",
     )?;
     registry.register(Box::new(exchange_rate_read.clone()))?;
-    registry.register(Box::new(HidingGaugeCollector{gauge: exchange_rate_updated.clone()}))?;
+    registry.register(Box::new(HidingGaugeCollector {
+        gauge: exchange_rate_updated.clone(),
+    }))?;
     registry.register(Box::new(warning_threshold_violations.clone()))?;
     registry.register(Box::new(read_attempts.clone()))?;
     registry.register(Box::new(update_attempts.clone()))?;

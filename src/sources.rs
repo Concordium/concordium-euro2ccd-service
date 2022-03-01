@@ -18,6 +18,11 @@ use std::{
 };
 use tokio::time::{interval, sleep, Duration};
 
+pub struct RateHistory {
+    pub rates:                  VecDeque<BigRational>,
+    pub last_reading_timestamp: i64,
+}
+
 #[derive(Clone)]
 pub enum Source {
     Bitfinex,
@@ -193,7 +198,7 @@ async fn request_exchange_rate(source: &Source, client: reqwest::Client) -> Opti
 pub async fn pull_exchange_rate(
     stats: prometheus::Stats,
     source: Source,
-    rate_history_mutex: Arc<Mutex<VecDeque<BigRational>>>,
+    rate_history_mutex: Arc<Mutex<RateHistory>>,
     pull_interval: u32,
     max_rates_saved: usize,
     mut database_conn: Option<mysql::PooledConn>,
@@ -248,11 +253,12 @@ pub async fn pull_exchange_rate(
         };
         log::info!("{}: New exchange rate polled: {}/{}", source, rate.numer(), rate.denom());
         {
-            let mut rates = rate_history_mutex.lock().unwrap();
-            rates.push_back(rate);
-            if rates.len() > max_rates_saved {
-                rates.pop_front();
+            let mut rate_history = rate_history_mutex.lock().unwrap();
+            rate_history.rates.push_back(rate);
+            if rate_history.rates.len() > max_rates_saved {
+                rate_history.rates.pop_front();
             }
+            rate_history.last_reading_timestamp = chrono::offset::Utc::now().timestamp();
         } // drop lock
     }
 }
