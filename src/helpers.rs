@@ -276,10 +276,7 @@ mod tests {
         v.push_back(median_1);
         v.push_back(median_2.clone());
         v.push_back(median_3);
-        assert_eq!(
-            compute_median(&v),
-            Some(median_2)
-        )
+        assert_eq!(compute_median(&v), Some(median_2))
     }
 
     #[test]
