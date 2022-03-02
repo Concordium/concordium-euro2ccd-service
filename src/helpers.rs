@@ -1,5 +1,7 @@
-use concordium_rust_sdk::types::{BlockSummary, ExchangeRate, UpdateKeysIndex};
-use crypto_common::{base16_encode_string, types::KeyPair};
+use concordium_rust_sdk::{
+    common::{base16_encode_string, types::KeyPair},
+    types::{BlockSummary, ExchangeRate, UpdateKeysIndex},
+};
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_rational::BigRational;
@@ -67,7 +69,7 @@ pub fn compute_median(rates: &VecDeque<BigRational>) -> Option<BigRational> {
     if len.is_odd() {
         Some(rate_vec[(len - 1) / 2].clone())
     } else {
-        compute_average(&rate_vec[(len - 1) / 2..len / 2])
+        compute_average(&rate_vec[(len - 1) / 2..(len / 2) + 1])
     }
 }
 
@@ -189,6 +191,92 @@ mod tests {
         v.push_back(BigRational::new(9u32.into(), 1u32.into()));
         assert_eq!(compute_median(&v), Some(BigRational::new(7u32.into(), 1u32.into())))
         // (5 + 9) / 2 = 7
+    }
+
+    #[test]
+    fn test_compute_median_floats_1() {
+        let median_part = BigRational::from_float(0.03878333).unwrap();
+        let mut v = VecDeque::new();
+        v.push_back(BigRational::from_float(0.03885685));
+        v.push_back(BigRational::from_float(0.0388584));
+        v.push_back(BigRational::from_float(0.0388584));
+        v.push_back(BigRational::from_float(0.03878333));
+        v.push_back(BigRational::from_float(0.03878333));
+        v.push_back(BigRational::from_float(0.03878333));
+        v.push_back(BigRational::from_float(0.03878333));
+        v.push_back(BigRational::from_float(0.03878333));
+        v.push_back(BigRational::from_float(0.03878333));
+        v.push_back(BigRational::from_float(0.03893119));
+        match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
+            Some(v) => assert_eq!(
+                v,
+                (median_part.clone() + median_part) / BigRational::from_integer(2.into())
+            ),
+            None => panic!("unexpeced missing result"),
+        }
+    }
+
+    #[test]
+    fn test_compute_median_floats_2() {
+        let median_part_1 = BigRational::from_float(0.038753264437224634).unwrap();
+        let median_part_2 = BigRational::from_float(0.0387291204482976).unwrap();
+        let mut v = VecDeque::new();
+        v.push_back(BigRational::from_float(0.03890143506317882));
+        v.push_back(BigRational::from_float(0.038753264437224634));
+        v.push_back(BigRational::from_float(0.03875608469063674));
+        v.push_back(BigRational::from_float(0.0387291204482976));
+        v.push_back(BigRational::from_float(0.03872209783880581));
+        v.push_back(BigRational::from_float(0.03872864822122797));
+        v.push_back(BigRational::from_float(0.038725175847088227));
+        v.push_back(BigRational::from_float(0.03871499568024753));
+        v.push_back(BigRational::from_float(0.03878131780389962));
+        v.push_back(BigRational::from_float(0.03882990048880441));
+        match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
+            Some(v) => {
+                assert_eq!(v, (median_part_1 + median_part_2) / BigRational::from_integer(2.into()))
+            }
+            None => panic!("unexpeced missing result"),
+        }
+    }
+
+    #[test]
+    fn test_compute_median_floats_3() {
+        let median_part_1 = BigRational::from_float(0.03828436591897897).unwrap();
+        let median_part_2 = BigRational::from_float(0.03820941906671523).unwrap();
+        let mut v = VecDeque::new();
+        v.push_back(BigRational::from_float(0.03828436591897897));
+        v.push_back(BigRational::from_float(0.03819855216150514));
+        v.push_back(BigRational::from_float(0.03819348471351539));
+        v.push_back(BigRational::from_float(0.03820941906671523));
+        v.push_back(BigRational::from_float(0.03820393607375668));
+        v.push_back(BigRational::from_float(0.03820735176404182));
+        v.push_back(BigRational::from_float(0.03830744063881822));
+        v.push_back(BigRational::from_float(0.0382987008046979));
+        v.push_back(BigRational::from_float(0.03829543671546038));
+        v.push_back(BigRational::from_float(0.03838764088740058));
+        match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
+            Some(v) => {
+                assert_eq!(v, (median_part_1 + median_part_2) / BigRational::from_integer(2.into()))
+            }
+            None => panic!("unexpeced missing result"),
+        }
+    }
+
+    #[test]
+    fn test_compute_median_of_medians() {
+        let median_1 = BigRational::from_float(0.03878333).unwrap();
+        let median_2_part_1 = BigRational::from_float(0.038753264437224634).unwrap();
+        let median_2_part_2 = BigRational::from_float(0.0387291204482976).unwrap();
+        let median_2 = (median_2_part_1 + median_2_part_2) / BigRational::from_integer(2.into());
+        let median_3_part_1 = BigRational::from_float(0.03828436591897897).unwrap();
+        let median_3_part_2 = BigRational::from_float(0.03820941906671523).unwrap();
+        let median_3 = (median_3_part_1 + median_3_part_2) / BigRational::from_integer(2.into());
+        // These values are the results from previous tests
+        let mut v = VecDeque::new();
+        v.push_back(median_1);
+        v.push_back(median_2.clone());
+        v.push_back(median_3);
+        assert_eq!(compute_median(&v), Some(median_2))
     }
 
     #[test]

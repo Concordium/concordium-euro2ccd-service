@@ -1,7 +1,7 @@
 use anyhow::{bail, Context};
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_secretsmanager::{Client, Region};
-use crypto_common::types::KeyPair;
+use concordium_rust_sdk::common::types::KeyPair;
 use std::path::PathBuf;
 
 pub async fn get_governance_from_aws(

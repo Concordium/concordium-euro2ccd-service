@@ -4,6 +4,7 @@ use crate::{
 };
 use anyhow::Context;
 use concordium_rust_sdk::{
+    common::types::{KeyPair, TransactionTime},
     constants::DEFAULT_NETWORK_ID,
     endpoints,
     types::{
@@ -13,7 +14,6 @@ use concordium_rust_sdk::{
         UpdateSequenceNumber,
     },
 };
-use crypto_common::types::{KeyPair, TransactionTime};
 use tokio::time::{interval, Duration};
 
 pub async fn get_block_summary(mut node_client: endpoints::Client) -> anyhow::Result<BlockSummary> {

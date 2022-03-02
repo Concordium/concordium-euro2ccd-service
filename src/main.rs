@@ -1,21 +1,21 @@
 mod config;
 mod database;
-mod exchanges;
 mod helpers;
 mod node;
 mod prometheus;
 mod secretsmanager;
+mod sources;
 
-use anyhow::{bail, Context};
+use anyhow::{ensure, Context};
 use clap::AppSettings;
 use concordium_rust_sdk::endpoints;
 use config::MAX_TIME_CHECK_SUBMISSION;
-use exchanges::{pull_exchange_rate, Exchange};
 use helpers::{compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_change};
 use node::{check_update_status, get_block_summary, get_node_client, send_update};
 use num_rational::BigRational;
 use reqwest::Url;
 use secretsmanager::{get_governance_from_aws, get_governance_from_file};
+use sources::{pull_exchange_rate, RateHistory, Source};
 use std::{
     collections::VecDeque,
     fs::File,
@@ -66,8 +66,8 @@ struct App {
     )]
     update_interval: u32,
     #[structopt(
-        long = "pull-exchange-interval",
-        help = "How often to pull new exchange rate from exchange. (In seconds)",
+        long = "pull-interval",
+        help = "How often to pull new exchange rate from each source. (In seconds)",
         env = "EUR2CCD_SERVICE_PULL_INTERVAL",
         default_value = "60"
     )]
@@ -119,20 +119,21 @@ struct App {
     )]
     prometheus_port: u16,
     #[structopt(
-        long = "max_rates_saved",
+        long = "max-rates-saved",
         help = "Determines the size of the history of rates from the exchange",
         env = "EUR2CCD_SERVICE_MAX_RATES_SAVED",
         default_value = "60"
     )]
     max_rates_saved: usize,
     #[structopt(
-        long = "test-exchange",
-        help = "If set to true, pulls exchange rate from the given location (see local_exchange \
-                subproject)  (FOR TESTING)",
-        env = "EUR2CCD_SERVICE_TEST_EXCHANGE",
+        long = "test-sources",
+        help = "If set to true, pulls exchange rate from each of the given locations (see \
+                local_exchange subproject)  (FOR TESTING)",
+        env = "EUR2CCD_SERVICE_TEST_SOURCES",
+        use_delimiter = true,
         group = "testing"
     )]
-    test_exchange: Option<Url>,
+    test_sources: Vec<Url>,
     #[structopt(
         long = "local-keys",
         help = "If given, the service uses local governance keys in specified file instead of \
@@ -152,6 +153,32 @@ struct App {
         env = "EUR2CCD_SERVICE_DATABASE_URL"
     )]
     database_url: Option<String>,
+    #[structopt(
+        long = "coin-gecko",
+        help = "If this flag is enabled, Coin Gecko is added to the list of sources",
+        env = "EUR2CCD_SERVICE_COIN_GECKO"
+    )]
+    coin_gecko: bool,
+    #[structopt(
+        long = "coin-market-cap",
+        help = "This option expects an API key for Coin Market Cap, and if given Coin Market Cap \
+                is added to the list of sources.",
+        env = "EUR2CCD_SERVICE_COIN_MARKET_CAP"
+    )]
+    coin_market_cap: Option<String>,
+    #[structopt(
+        long = "live-coin-watch",
+        help = "This option expects an API key for Live Coin Watch, and if given Live Coin Watch \
+                is added to the list of sources.",
+        env = "EUR2CCD_SERVICE_LIVE_COIN_WATCH"
+    )]
+    live_coin_watch: Option<String>,
+    #[structopt(
+        long = "bitfinex",
+        help = "If this flag is enabled, BitFinex is added to the list of sources",
+        env = "EUR2CCD_SERVICE_BITFINEX"
+    )]
+    bitfinex: bool,
 }
 
 /// Attempts to create a file, signalling that the service should be forced into
@@ -179,11 +206,13 @@ fn is_dry_run_forced() -> bool {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let app = {
+    let app: App = {
         let app = App::clap().global_setting(AppSettings::ColoredHelp);
         let matches = app.get_matches();
         App::from_clap(&matches)
     };
+    let max_rates_saved = app.max_rates_saved;
+    let pull_interval = app.pull_interval;
 
     // Setup
     // (Stop if error occurs)
@@ -205,36 +234,33 @@ async fn main() -> anyhow::Result<()> {
     );
     log::debug!(
         "Pulling rates every {} seconds. (Max {} rates are saved at a time)",
-        app.pull_interval,
-        app.max_rates_saved
+        pull_interval,
+        max_rates_saved
     );
 
-    anyhow::ensure!(!app.endpoint.is_empty(), "At least one node must be provided.");
-
-    if app.halt_increase_threshold <= app.warning_increase_threshold {
-        log::error!("Warning threshold must be lower than halt threshold (increase)");
-        bail!("Error during startup");
-    }
-    if !(1..=100).contains(&app.halt_decrease_threshold) {
-        log::error!(
-            "Halt threshold (decrease) outside of allowed range (1-100): {} ",
-            app.halt_decrease_threshold
-        );
-        bail!("Error during startup");
-    }
-    if app.halt_decrease_threshold <= app.warning_decrease_threshold {
-        log::error!("Warning threshold must be lower than halt threshold (decrease)");
-        bail!("Error during startup");
-    }
+    ensure!(!app.endpoint.is_empty(), "At least one node must be provided.");
+    ensure!(
+        app.halt_increase_threshold > app.warning_increase_threshold,
+        "Warning threshold must be lower than halt threshold (increase)"
+    );
+    ensure!(
+        (1..=100).contains(&app.halt_decrease_threshold),
+        "Halt threshold (decrease) outside of allowed range (1-100): {} ",
+        app.halt_decrease_threshold
+    );
+    ensure!(
+        app.halt_decrease_threshold > app.warning_decrease_threshold,
+        "Warning threshold must be lower than halt threshold (decrease)"
+    );
 
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
 
-    let (mut main_database_conn, reader_database_conn) = {
+    let (mut main_database_conn, connection_pool) = {
         if let Some(url) = app.database_url {
             let pool = database::establish_connection_pool(&url)?;
             let mut main_conn = pool.get_conn()?;
             database::create_tables(&mut main_conn)?;
-            (Some(main_conn), Some(pool.get_conn()?))
+            (Some(main_conn), Some(pool))
         } else {
             log::warn!(
                 "No database url provided, service will not save to read and updated rates!"
@@ -250,7 +276,7 @@ async fn main() -> anyhow::Result<()> {
         BigRational::from_integer(app.warning_decrease_threshold.into());
     let halt_decrease_threshold = BigRational::from_integer(app.halt_decrease_threshold.into());
 
-    let (registry, stats) =
+    let (registry, mut stats) =
         prometheus::initialize().await.context("Failed to start the prometheus server.")?;
     tokio::spawn(prometheus::serve_prometheus(registry, app.prometheus_port));
     log::debug!("Started prometheus");
@@ -268,21 +294,63 @@ async fn main() -> anyhow::Result<()> {
         initial_rate.numerator as f64 / initial_rate.denominator as f64
     );
 
-    let exchange = match app.test_exchange {
-        Some(url) => Exchange::Test(url),
-        None => Exchange::Bitfinex,
+    // Vector that stores the rate history for each source. Each history is a queue
+    // in a mutex.
+    let mut rate_histories: Vec<Arc<Mutex<RateHistory>>> = Vec::new();
+    let mut last_update_timestamp: i64 = 1;
+
+    let mut add_source = |source: Source| -> anyhow::Result<()> {
+        let rates_mutex = Arc::new(Mutex::new(RateHistory {
+            rates:                  VecDeque::with_capacity(max_rates_saved),
+            last_reading_timestamp: 0,
+        }));
+        rate_histories.push(rates_mutex.clone());
+        // Create a connection for this reader thread, if a database url was provided:
+        let reader_conn = match connection_pool.clone() {
+            Some(ref p) => Some(p.get_conn()?),
+            None => None,
+        };
+
+        tokio::spawn(pull_exchange_rate(
+            stats.clone(),
+            source,
+            rates_mutex,
+            pull_interval,
+            max_rates_saved,
+            reader_conn,
+        ));
+        Ok(())
     };
 
-    let rates_mutex = Arc::new(Mutex::new(VecDeque::with_capacity(app.max_rates_saved)));
+    if app.coin_gecko {
+        log::info!("Using \"Coin Gecko\" as a source");
+        add_source(Source::CoinGecko)?
+    }
 
-    tokio::spawn(pull_exchange_rate(
-        stats.clone(),
-        exchange,
-        rates_mutex.clone(),
-        app.pull_interval,
-        app.max_rates_saved,
-        reader_database_conn,
-    ));
+    if app.bitfinex {
+        log::info!("Using \"BitFinex\" as a source");
+        add_source(Source::Bitfinex)?
+    }
+
+    if let Some(api_key) = app.coin_market_cap {
+        log::info!("Using \"Coin Market Cap\" as a source");
+        add_source(Source::CoinMarketCap(api_key))?
+    }
+
+    if let Some(api_key) = app.live_coin_watch {
+        log::info!("Using \"Live Coin Watch\" as a source");
+        add_source(Source::LiveCoinWatch(api_key))?
+    }
+
+    for (i, url) in app.test_sources.into_iter().enumerate() {
+        log::info!("Using test source: {}, as test{}", url, i);
+        add_source(Source::Test {
+            url,
+            label: format!("test{}", i),
+        })?
+    }
+
+    ensure!(!rate_histories.is_empty(), "At least one source must be chosen.");
 
     let forced_dry_run = is_dry_run_forced();
     if forced_dry_run {
@@ -296,7 +364,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         log::debug!("Running wet run!");
         let secret_keys = if app.local_keys.is_empty() {
-            anyhow::ensure!(
+            ensure!(
                 !app.secret_names.is_empty(),
                 "If `dry-run` is not used then one of `secret-names` and `local-keys` must be \
                  provided."
@@ -321,10 +389,39 @@ async fn main() -> anyhow::Result<()> {
     'main: loop {
         log::debug!("Starting new main loop cycle: waiting for interval");
         interval.tick().await;
-
         let rate = {
-            let rates_lock = rates_mutex.lock().unwrap();
-            match compute_median(&*rates_lock) {
+            // For each source, we compute the median of their history:
+            let rate_medians = rate_histories
+                .iter()
+                .map(|rates_mutex| {
+                    let rates_history = rates_mutex.lock().unwrap();
+                    if rates_history.last_reading_timestamp == 0 {
+                        log::warn!("A source was dropped for update, no successful readings");
+                        None
+                    } else if rates_history.last_reading_timestamp < last_update_timestamp {
+                        log::warn!(
+                            "A source was dropped for update, last succesful reading was at {}",
+                            chrono::NaiveDateTime::from_timestamp(
+                                rates_history.last_reading_timestamp,
+                                0
+                            )
+                        );
+                        None
+                    } else {
+                        compute_median(&rates_history.rates)
+                    }
+                })
+                .filter(|rm| rm.is_some())
+                .collect::<Option<VecDeque<_>>>();
+            // Then we determine the median of the medians:
+            match rate_medians.and_then(|rm| {
+                if rm.is_empty() {
+                    log::error!("Skipping update, due to no sources have new readings");
+                    None
+                } else {
+                    compute_median(&rm)
+                }
+            }) {
                 Some(r) => r * &million, /* multiply with 1000000 microCCD/CCD to convert the */
                 // unit to microCCD/Eur
                 None => {
@@ -334,6 +431,9 @@ async fn main() -> anyhow::Result<()> {
             }
         }; // drop lock
         log::debug!("Computed median: {} microCCD/Eur", rate);
+
+        // Update the timestamp for the next update
+        last_update_timestamp = chrono::offset::Utc::now().timestamp();
 
         // Calculates the relative change from the prev_rate, which should be the
         // current exchange rate on chain, and our proposed update:
