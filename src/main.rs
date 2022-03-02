@@ -416,7 +416,7 @@ async fn main() -> anyhow::Result<()> {
             // Then we determine the median of the medians:
             match rate_medians.and_then(|rm| {
                 if rm.is_empty() {
-                    log::error!("Skipping update, due to no sources have new readings");
+                    log::error!("Skipping update, due to no sources having new readings");
                     None
                 } else {
                     compute_median(&rm)
