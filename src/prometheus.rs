@@ -33,19 +33,20 @@ pub async fn serve_prometheus(registry: Registry, port: u16) {
 }
 
 /// A wrapper for a prometheus Gauge, which won't let the Gauge be collected
-/// when it is zero.
+/// unless allow_collect is true
 #[derive(Debug, Clone)]
 struct HidingGaugeCollector {
-    gauge: Gauge,
+    gauge:         Gauge,
+    allow_collect: bool,
 }
 impl prometheus::core::Collector for HidingGaugeCollector {
     fn desc(&self) -> Vec<&prometheus::core::Desc> { self.gauge.desc() }
 
     fn collect(&self) -> Vec<prometheus::proto::MetricFamily> {
-        if self.gauge.get() == 0.0 {
-            vec![]
-        } else {
+        if self.allow_collect {
             self.gauge.collect()
+        } else {
+            vec![]
         }
     }
 }
@@ -56,7 +57,7 @@ pub struct Stats {
     /// variable label, which denotes the source.
     exchange_rate_read:           GaugeVec,
     /// The value of the last exchange rate update performed on chain.
-    exchange_rate_updated:        Gauge,
+    exchange_rate_updated:        HidingGaugeCollector,
     /// Number of times an update has been outside the warning threshold.
     warning_threshold_violations: IntCounter,
     /// Number of times we failed to read from each source.
@@ -86,9 +87,12 @@ impl Stats {
         }
     }
 
-    pub fn update_updated_rate(&self, rate: &BigRational) {
+    pub fn update_updated_rate(&mut self, rate: &BigRational) {
         if let Some(rate_float) = rate.to_f64() {
-            self.exchange_rate_updated.set(rate_float)
+            self.exchange_rate_updated.gauge.set(rate_float);
+            if !self.exchange_rate_updated.allow_collect {
+                self.exchange_rate_updated.allow_collect = true
+            }
         } else {
             log::error!(
                 "Unable to convert updated rate {}/{} to float for Prometheus",
@@ -134,7 +138,10 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
         prometheus::Opts::new("exchange_rate_read", "Last polled exchange rate."),
         &["Source"],
     )?;
-    let exchange_rate_updated = Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?;
+    let exchange_rate_updated = HidingGaugeCollector {
+        gauge:         Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?,
+        allow_collect: false,
+    };
     let warning_threshold_violations = IntCounter::new(
         "warning_threshold_violations",
         "Amount of times an update has been outside the warning threshold.",
@@ -154,9 +161,7 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
         "Amount of times writing to the database has failed.",
     )?;
     registry.register(Box::new(exchange_rate_read.clone()))?;
-    registry.register(Box::new(HidingGaugeCollector {
-        gauge: exchange_rate_updated.clone(),
-    }))?;
+    registry.register(Box::new(exchange_rate_updated.clone()))?;
     registry.register(Box::new(warning_threshold_violations.clone()))?;
     registry.register(Box::new(read_attempts.clone()))?;
     registry.register(Box::new(update_attempts.clone()))?;

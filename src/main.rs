@@ -276,7 +276,7 @@ async fn main() -> anyhow::Result<()> {
         BigRational::from_integer(app.warning_decrease_threshold.into());
     let halt_decrease_threshold = BigRational::from_integer(app.halt_decrease_threshold.into());
 
-    let (registry, stats) =
+    let (registry, mut stats) =
         prometheus::initialize().await.context("Failed to start the prometheus server.")?;
     tokio::spawn(prometheus::serve_prometheus(registry, app.prometheus_port));
     log::debug!("Started prometheus");
