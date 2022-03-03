@@ -102,7 +102,10 @@ impl RequestExchangeRate for Source {
             Source::CoinMarketCap(_) => {
                 let response = serde_json::from_slice::<CoinMarketCapResponse>(response_bytes)?;
                 if response.status.error_code != 0 {
-                    return Err(anyhow!(response.status.error_message.unwrap_or("No error message".to_string())));
+                    return Err(anyhow!(response
+                        .status
+                        .error_message
+                        .unwrap_or("No error message".to_string())));
                 }
                 response
                     .data
@@ -177,7 +180,6 @@ async fn request_exchange_rate(source: &Source, client: reqwest::Client) -> Opti
                     return Some(val);
                 }
                 Err(err) => {
-
                     log::error!("{}: Unable to parse response: {}", source, err)
                 }
             },
