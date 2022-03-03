@@ -43,9 +43,9 @@ impl fmt::Display for Source {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Source::Bitfinex => write!(f, "bitfinex"),
-            Source::LiveCoinWatch(_) => write!(f, "coin_gecko"),
-            Source::CoinMarketCap(_) => write!(f, "live_coin_watch"),
-            Source::CoinGecko => write!(f, "coin_market_cap"),
+            Source::LiveCoinWatch(_) => write!(f, "live_coin_watch"),
+            Source::CoinMarketCap(_) => write!(f, "coin_market_cap"),
+            Source::CoinGecko => write!(f, "coin_gecko"),
             Source::Test {
                 label,
                 ..
@@ -102,7 +102,7 @@ impl RequestExchangeRate for Source {
             Source::CoinMarketCap(_) => {
                 let response = serde_json::from_slice::<CoinMarketCapResponse>(response_bytes)?;
                 if response.status.error_code != 0 {
-                    return Err(anyhow!(response.status.error_message));
+                    return Err(anyhow!(response.status.error_message.unwrap_or("No error message".to_string())));
                 }
                 response
                     .data
@@ -177,6 +177,7 @@ async fn request_exchange_rate(source: &Source, client: reqwest::Client) -> Opti
                     return Some(val);
                 }
                 Err(err) => {
+
                     log::error!("{}: Unable to parse response: {}", source, err)
                 }
             },
@@ -291,7 +292,7 @@ struct CoinMarketCapResponseData {
 struct CoinMarketCapResponseStatus {
     // This object also contains timestamp, elapsed and credit_count.
     error_code:    u16,
-    error_message: String,
+    error_message: Option<String>,
 }
 
 #[derive(SerdeDeserialize)]
