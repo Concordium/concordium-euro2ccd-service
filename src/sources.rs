@@ -102,10 +102,10 @@ impl RequestExchangeRate for Source {
             Source::CoinMarketCap(_) => {
                 let response = serde_json::from_slice::<CoinMarketCapResponse>(response_bytes)?;
                 if response.status.error_code != 0 {
-                    return Err(anyhow!(response
-                        .status
-                        .error_message
-                        .unwrap_or("No error message".to_string())));
+                    return Err(anyhow!(response.status.error_message.unwrap_or(format!(
+                        "No error message, but the code was {}",
+                        response.status.error_code
+                    ))));
                 }
                 response
                     .data

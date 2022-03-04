@@ -5,6 +5,7 @@ use num_traits::ToPrimitive;
 use prometheus::{
     Encoder, Gauge, GaugeVec, IntCounter, IntGauge, IntGaugeVec, Registry, TextEncoder,
 };
+use std::sync::{Arc, RwLock};
 use warp::{http::StatusCode, Filter};
 
 async fn handle_metrics(registry: Registry) -> Result<String> {
@@ -37,13 +38,13 @@ pub async fn serve_prometheus(registry: Registry, port: u16) {
 #[derive(Debug, Clone)]
 struct HidingGaugeCollector {
     gauge:         Gauge,
-    allow_collect: bool,
+    allow_collect: Arc<RwLock<bool>>,
 }
 impl prometheus::core::Collector for HidingGaugeCollector {
     fn desc(&self) -> Vec<&prometheus::core::Desc> { self.gauge.desc() }
 
     fn collect(&self) -> Vec<prometheus::proto::MetricFamily> {
-        if self.allow_collect {
+        if self.allow_collect.read().map(|a| *a).unwrap_or(false) {
             self.gauge.collect()
         } else {
             vec![]
@@ -90,8 +91,12 @@ impl Stats {
     pub fn update_updated_rate(&mut self, rate: &BigRational) {
         if let Some(rate_float) = rate.to_f64() {
             self.exchange_rate_updated.gauge.set(rate_float);
-            if !self.exchange_rate_updated.allow_collect {
-                self.exchange_rate_updated.allow_collect = true
+            if !self.exchange_rate_updated.allow_collect.read().map(|a| *a).unwrap_or(false) {
+                if let Ok(mut allow) = self.exchange_rate_updated.allow_collect.write() {
+                    *allow = true
+                } else {
+                    log::error!("Unable to update updated_rate's allow_collect field");
+                }
             }
         } else {
             log::error!(
@@ -140,7 +145,7 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
     )?;
     let exchange_rate_updated = HidingGaugeCollector {
         gauge:         Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?,
-        allow_collect: false,
+        allow_collect: Arc::new(RwLock::new(false)),
     };
     let warning_threshold_violations = IntCounter::new(
         "warning_threshold_violations",

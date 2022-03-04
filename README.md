@@ -29,14 +29,14 @@ Explanations of all parameters can be seen by using the help flag, i.e. `cargo r
 - `halt-increase-threshold` (environment variable: `EUR2CCD_SERVICE_HALT_INCREASE_THRESHOLD`): Determines the threshold where an update increasing the exchange rate triggers a halt, specified in percentages.  (default: 100%)
 - `warning-decrease-threshold` (environment variable: `EUR2CCD_SERVICE_WARNING_DECREASE_THRESHOLD`): Determines the threshold where an update decreasing the exchange rate triggers a warning, specified in percentages. (default: 15%)
 - `halt-decrease-threshold` (environment variable: `EUR2CCD_SERVICE_HALT_DECREASE_THRESHOLD`): Determines the threshold where an update decreasing the exchange rate triggers a halt, specified in percentages.  (default: 50%)
-- `coin-gecko` (environment variable:  `EUR2CCD_SERVICE_COIN_MARKET_CAP`): If this flag is set, the service will use Coin Gecko as a source. The value of the flag is not used.
+- `coin-gecko` (environment variable:  `EUR2CCD_SERVICE_COIN_GECKO`): If this flag is set, the service will use Coin Gecko as a source. The value of the flag is not used.
 - `live-coin-watch` (environment variable:  `EUR2CCD_SERVICE_LIVE_COIN_WATCH`): If this flag is set, the service will use Live Coin Watch as a source. The value is expected to be an API key for the site.
 - `coin-market-cap` (environment variable:  `EUR2CCD_SERVICE_COIN_MARKET_CAP`): If this flag is set, the service will use Coin Market Cap as a source. The value is expected to be an API key for the site.
 - `bitfinex` (environment variable:  `EUR2CCD_SERVICE_BITFINEX`): If this flag is set, the service will use Bitfinex as a source.
  
 - `dry-run` (environment variable: `EUR2CCD_DRY_RUN`): Configures the service to only poll and compute the updates it would have done
 without performing them. Instead they are logged at INFO level.
-- `test-source` (environment variable: `EUR2CCD_SERVICE_TEST_SOURCE`): Comma separated URLs, which the service will add to its list of sources. (See /test-exchange for an example implementation)
+- `test-sources` (environment variable: `EUR2CCD_SERVICE_TEST_SOURCES`): Comma separated URLs, which the service will add to its list of sources. (See /test-exchange for an example implementation)
 - `local-keys` (environment variable: `EUR2CCD_SERVICE_LOCAL_KEYS`): Comma separated names of files, which the service will attempt to read keys from, instead of from secrets on AWS. (Expects the files to contain arrays of keys)
 
 
