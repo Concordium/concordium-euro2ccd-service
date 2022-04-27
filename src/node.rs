@@ -73,7 +73,16 @@ pub async fn send_update(
                     return None;
                 }
             };
-            seq_number = new_summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
+            seq_number = match new_summary {
+                BlockSummary::V0 {
+                    data,
+                    ..
+                } => data.updates.update_queues.micro_gtu_per_euro.next_sequence_number,
+                BlockSummary::V1 {
+                    data,
+                    ..
+                } => data.updates.update_queues.micro_gtu_per_euro.next_sequence_number,
+            };
         }
         // Construct the block item again. This sets the expiry from now so it is
         // necessary to reconstruct on each attempt.

@@ -17,8 +17,8 @@ pub fn get_signer(
     kps: Vec<KeyPair>,
     summary: &BlockSummary,
 ) -> anyhow::Result<Vec<(UpdateKeysIndex, KeyPair)>> {
-    let update_keys = &summary.updates.keys.level_2_keys.keys;
-    let update_key_indices = &summary.updates.keys.level_2_keys.micro_gtu_per_euro;
+    let update_keys = &summary.common_update_keys().keys;
+    let update_key_indices = &summary.common_update_keys().micro_gtu_per_euro;
 
     // find the key indices to sign with
     let mut signer = Vec::new();
