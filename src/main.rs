@@ -10,7 +10,7 @@ use anyhow::{ensure, Context};
 use clap::AppSettings;
 use concordium_rust_sdk::{endpoints, types};
 use config::MAX_TIME_CHECK_SUBMISSION;
-use helpers::{compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_change};
+use helpers::{compute_median, convert_big_fraction_to_exchange_rate, relative_change};
 use node::{check_update_status, get_block_summary, get_node_client, send_update};
 use num_rational::BigRational;
 use reqwest::Url;
@@ -392,7 +392,15 @@ async fn main() -> anyhow::Result<()> {
             get_governance_from_file(&app.local_keys)
         }
         .context("Could not obtain keys.")?;
-        Some(get_signer(secret_keys, &summary).context("Failed to obtain keys.")?)
+        Some(
+            summary
+                .common_update_keys()
+                .construct_update_signer(
+                    &summary.common_update_keys().micro_gtu_per_euro,
+                    secret_keys,
+                )
+                .context("Failed to obtain keys.")?,
+        )
     };
 
     let update_interval_duration = Duration::from_secs(app.update_interval.into());
