@@ -8,9 +8,9 @@ mod sources;
 
 use anyhow::{ensure, Context};
 use clap::AppSettings;
-use concordium_rust_sdk::endpoints;
+use concordium_rust_sdk::{endpoints, types};
 use config::MAX_TIME_CHECK_SUBMISSION;
-use helpers::{compute_median, convert_big_fraction_to_exchange_rate, get_signer, relative_change};
+use helpers::{compute_median, convert_big_fraction_to_exchange_rate, relative_change};
 use node::{check_update_status, get_block_summary, get_node_client, send_update};
 use num_rational::BigRational;
 use reqwest::Url;
@@ -283,8 +283,26 @@ async fn main() -> anyhow::Result<()> {
 
     let mut node_client = get_node_client(app.endpoint.clone(), &app.token).await?;
     let summary = get_block_summary(node_client.clone()).await?;
-    let mut seq_number = summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
-    let initial_rate = summary.updates.chain_parameters.micro_gtu_per_euro;
+    let (mut seq_number, initial_rate) = {
+        match &summary {
+            types::BlockSummary::V0 {
+                data,
+                ..
+            } => {
+                let seq_number = data.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
+                let initial_rate = data.updates.chain_parameters.micro_gtu_per_euro;
+                (seq_number, initial_rate)
+            }
+            types::BlockSummary::V1 {
+                data,
+                ..
+            } => {
+                let seq_number = data.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
+                let initial_rate = data.updates.chain_parameters.micro_gtu_per_euro;
+                (seq_number, initial_rate)
+            }
+        }
+    };
     let mut prev_rate =
         BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into());
     log::debug!(
@@ -374,7 +392,15 @@ async fn main() -> anyhow::Result<()> {
             get_governance_from_file(&app.local_keys)
         }
         .context("Could not obtain keys.")?;
-        Some(get_signer(secret_keys, &summary).context("Failed to obtain keys.")?)
+        Some(
+            summary
+                .common_update_keys()
+                .construct_update_signer(
+                    &summary.common_update_keys().micro_gtu_per_euro,
+                    secret_keys,
+                )
+                .context("Failed to obtain keys.")?,
+        )
     };
 
     let update_interval_duration = Duration::from_secs(app.update_interval.into());
@@ -499,8 +525,7 @@ async fn main() -> anyhow::Result<()> {
                 loop {
                     // Try to send the update
                     if let Some(result) =
-                        send_update(&stats, seq_number, &signer, new_rate, node_client.clone())
-                            .await
+                        send_update(&stats, seq_number, signer, new_rate, node_client.clone()).await
                     {
                         break result;
                     };

@@ -4,16 +4,16 @@ use crate::{
 };
 use anyhow::Context;
 use concordium_rust_sdk::{
-    common::types::{KeyPair, TransactionTime},
-    constants::DEFAULT_NETWORK_ID,
+    common::types::TransactionTime,
     endpoints,
     types::{
         hashes,
         transactions::{update, BlockItem, Payload},
-        BlockSummary, ExchangeRate, TransactionStatus, UpdateKeysIndex, UpdatePayload,
-        UpdateSequenceNumber,
+        BlockSummary, ExchangeRate, TransactionStatus, UpdateKeyPair, UpdateKeysIndex,
+        UpdatePayload, UpdateSequenceNumber,
     },
 };
+use std::collections::BTreeMap;
 use tokio::time::{interval, Duration};
 
 pub async fn get_block_summary(mut node_client: endpoints::Client) -> anyhow::Result<BlockSummary> {
@@ -31,7 +31,7 @@ pub async fn get_block_summary(mut node_client: endpoints::Client) -> anyhow::Re
 
 fn construct_block_item(
     seq_number: UpdateSequenceNumber,
-    signer: &[(UpdateKeysIndex, KeyPair)],
+    signer: &BTreeMap<UpdateKeysIndex, UpdateKeyPair>,
     exchange_rate: ExchangeRate,
 ) -> BlockItem<Payload> {
     let effective_time = 0.into();
@@ -53,7 +53,7 @@ fn construct_block_item(
 pub async fn send_update(
     stats: &Stats,
     mut seq_number: UpdateSequenceNumber,
-    signer: &[(UpdateKeysIndex, KeyPair)],
+    signer: &BTreeMap<UpdateKeysIndex, UpdateKeyPair>,
     exchange_rate: ExchangeRate,
     mut client: endpoints::Client,
 ) -> Option<(hashes::TransactionHash, UpdateSequenceNumber)> {
@@ -73,22 +73,24 @@ pub async fn send_update(
                     return None;
                 }
             };
-            seq_number = new_summary.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
+            seq_number = match new_summary {
+                BlockSummary::V0 {
+                    data,
+                    ..
+                } => data.updates.update_queues.micro_gtu_per_euro.next_sequence_number,
+                BlockSummary::V1 {
+                    data,
+                    ..
+                } => data.updates.update_queues.micro_gtu_per_euro.next_sequence_number,
+            };
         }
         // Construct the block item again. This sets the expiry from now so it is
         // necessary to reconstruct on each attempt.
         let block_item = construct_block_item(seq_number, signer, exchange_rate);
-        match client.send_transaction(DEFAULT_NETWORK_ID, &block_item).await {
-            Ok(true) => {
+        match client.send_block_item(&block_item).await {
+            Ok(submission_id) => {
                 stats.reset_update_attempts();
-                return Some((block_item.hash(), seq_number));
-            }
-            Ok(false) => {
-                stats.increment_update_attempts();
-                log::error!("Sending update was rejected, id: {}.", block_item.hash());
-                // We assume that the reason for rejection is an incorrect sequence number
-                // (because it is the only one we can solve)
-                get_new_seq_number = true;
+                return Some((submission_id, seq_number));
             }
             Err(endpoints::RPCError::CallError(status)) => {
                 stats.increment_update_attempts();

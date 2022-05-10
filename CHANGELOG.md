@@ -1,5 +1,9 @@
 # Unreleased changes
 
+# 0.4.0
+
+ - Compatibility with node version 4.
+
 # 0.3.2
 
 ## Fixed

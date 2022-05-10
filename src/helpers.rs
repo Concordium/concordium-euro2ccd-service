@@ -1,49 +1,10 @@
-use concordium_rust_sdk::{
-    common::{base16_encode_string, types::KeyPair},
-    types::{BlockSummary, ExchangeRate, UpdateKeysIndex},
-};
+use concordium_rust_sdk::types::ExchangeRate;
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_rational::BigRational;
 use num_traits::{CheckedDiv, ToPrimitive, Zero};
 use std::collections::VecDeque;
 
-/**
- * Given keypairs and a BlockSummary, find the corresponding index for each
- * keypair, on the chain. Aborts if any keypair is not registered to sign
- * CCD/euro rate updates.
- */
-pub fn get_signer(
-    kps: Vec<KeyPair>,
-    summary: &BlockSummary,
-) -> anyhow::Result<Vec<(UpdateKeysIndex, KeyPair)>> {
-    let update_keys = &summary.updates.keys.level_2_keys.keys;
-    let update_key_indices = &summary.updates.keys.level_2_keys.micro_gtu_per_euro;
-
-    // find the key indices to sign with
-    let mut signer = Vec::new();
-    for kp in kps {
-        if let Some(i) = update_keys.iter().position(|public| public.public == kp.public.into()) {
-            let idx = UpdateKeysIndex {
-                index: i as u16,
-            };
-            if update_key_indices.authorized_keys.contains(&idx) {
-                signer.push((idx, kp))
-            } else {
-                anyhow::bail!(
-                    "The given key {} is not registered for the CCD/Eur rate update.",
-                    base16_encode_string(&kp.public)
-                );
-            }
-        } else {
-            anyhow::bail!(
-                "The given key {} is not registered for any level 2 updates.",
-                base16_encode_string(&kp.public)
-            );
-        }
-    }
-    Ok(signer)
-}
 /**
  * Compute the average of the rates stored in the given VeqDeque.
  * Returns None if the queue is empty.
