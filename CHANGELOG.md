@@ -1,5 +1,9 @@
 # Unreleased changes
 
+# 0.4.1
+ - Bump the SDK to fix a JSON parsing error that would sometimes lead to block
+   summary parsing errors.
+
 # 0.4.0
 
  - Compatibility with node version 4.
