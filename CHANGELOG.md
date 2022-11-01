@@ -1,5 +1,9 @@
 # Unreleased changes
 
+# 0.5.0
+ - Support for protocol 5.
+ - The service now uses V2 GRPC node API.
+
 # 0.4.1
  - Bump the SDK to fix a JSON parsing error that would sometimes lead to block
    summary parsing errors.

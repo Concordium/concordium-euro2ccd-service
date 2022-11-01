@@ -1,33 +1,18 @@
 use crate::{
-    config::{CHECK_SUBMISSION_STATUS_INTERVAL, RETRY_SUBMISSION_INTERVAL, UPDATE_EXPIRY_OFFSET},
+    config::{RETRY_SUBMISSION_INTERVAL, UPDATE_EXPIRY_OFFSET},
     prometheus::Stats,
 };
-use anyhow::Context;
 use concordium_rust_sdk::{
     common::types::TransactionTime,
-    endpoints,
     types::{
         hashes,
         transactions::{update, BlockItem, Payload},
-        BlockSummary, ExchangeRate, TransactionStatus, UpdateKeyPair, UpdateKeysIndex,
-        UpdatePayload, UpdateSequenceNumber,
+        ExchangeRate, UpdateKeyPair, UpdateKeysIndex, UpdatePayload, UpdateSequenceNumber,
     },
+    v2,
 };
 use std::collections::BTreeMap;
 use tokio::time::{interval, Duration};
-
-pub async fn get_block_summary(mut node_client: endpoints::Client) -> anyhow::Result<BlockSummary> {
-    let consensus_status = node_client
-        .get_consensus_status()
-        .await
-        .context("Could not obtain status of consensus.")?;
-
-    let summary: BlockSummary = node_client
-        .get_block_summary(&consensus_status.last_finalized_block)
-        .await
-        .context("Could not obtain last finalized block")?;
-    Ok(summary)
-}
 
 fn construct_block_item(
     seq_number: UpdateSequenceNumber,
@@ -55,7 +40,7 @@ pub async fn send_update(
     mut seq_number: UpdateSequenceNumber,
     signer: &BTreeMap<UpdateKeysIndex, UpdateKeyPair>,
     exchange_rate: ExchangeRate,
-    mut client: endpoints::Client,
+    mut client: v2::Client,
 ) -> Option<(hashes::TransactionHash, UpdateSequenceNumber)> {
     let mut get_new_seq_number = false;
 
@@ -65,24 +50,17 @@ pub async fn send_update(
         interval.tick().await;
 
         if get_new_seq_number {
-            let new_summary = match get_block_summary(client.clone()).await {
-                Ok(o) => o,
-                Err(e) => {
-                    log::error!("Unable to pull new sequence number due to: {}", e);
-                    // The only reason this should fail is a connection issue.
-                    return None;
-                }
-            };
-            seq_number = match new_summary {
-                BlockSummary::V0 {
-                    data,
-                    ..
-                } => data.updates.update_queues.micro_gtu_per_euro.next_sequence_number,
-                BlockSummary::V1 {
-                    data,
-                    ..
-                } => data.updates.update_queues.micro_gtu_per_euro.next_sequence_number,
-            };
+            let new_seq =
+                match client.get_next_update_sequence_numbers(v2::BlockIdentifier::LastFinal).await
+                {
+                    Ok(o) => o,
+                    Err(e) => {
+                        log::error!("Unable to pull new sequence number due to: {}", e);
+                        // The only reason this should fail is a connection issue.
+                        return None;
+                    }
+                };
+            seq_number = new_seq.response.micro_ccd_per_euro;
         }
         // Construct the block item again. This sets the expiry from now so it is
         // necessary to reconstruct on each attempt.
@@ -92,7 +70,7 @@ pub async fn send_update(
                 stats.reset_update_attempts();
                 return Some((submission_id, seq_number));
             }
-            Err(endpoints::RPCError::CallError(status)) => {
+            Err(v2::RPCError::CallError(status)) => {
                 stats.increment_update_attempts();
                 match status.code() {
                     tonic::Code::Internal
@@ -125,33 +103,9 @@ pub async fn send_update(
 
 pub async fn check_update_status(
     submission_id: hashes::TransactionHash,
-    mut client: endpoints::Client,
+    client: &mut v2::Client,
 ) -> anyhow::Result<()> {
-    let mut interval = interval(Duration::from_secs(CHECK_SUBMISSION_STATUS_INTERVAL));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    loop {
-        interval.tick().await;
-        match client
-            .get_transaction_status(&submission_id)
-            .await
-            .context("Could not query submission status.")?
-        {
-            TransactionStatus::Finalized(blocks) => {
-                log::info!(
-                    "Submission is finalized in blocks {:?}",
-                    blocks.keys().collect::<Vec<_>>()
-                );
-                break;
-            }
-            TransactionStatus::Committed(blocks) => {
-                log::info!(
-                    "Submission is committed to blocks {:?}",
-                    blocks.keys().collect::<Vec<_>>()
-                );
-            }
-            TransactionStatus::Received => log::debug!("Submission is received."),
-        }
-    }
+    client.wait_until_finalized(&submission_id).await?;
     Ok(())
 }
 
@@ -160,12 +114,9 @@ pub async fn check_update_status(
  * connect to it. Returns an error if we are not able to connect to any of
  * the nodes.
  */
-pub async fn get_node_client(
-    endpoints: Vec<endpoints::Endpoint>,
-    token: &str,
-) -> anyhow::Result<endpoints::Client> {
+pub async fn get_node_client(endpoints: Vec<v2::Endpoint>) -> anyhow::Result<v2::Client> {
     for node_ep in endpoints.into_iter() {
-        if let Ok(client) = endpoints::Client::connect(node_ep, token.to_string()).await {
+        if let Ok(client) = v2::Client::new(node_ep).await {
             return Ok(client);
         };
     }

@@ -17,8 +17,8 @@ Explanations of all parameters can be seen by using the help flag, i.e. `cargo r
 
 - `secret-names` (environment variable: `EUR2CCD_SERVICE_SECRET_NAMES`): Comma separated names of the secrets on AWS, where the governance keys are stored. The service expects one keypair, in the form of a JSON object, per secret.
 - `aws-region` (environment variable: `EUR2CCD_SERVICE_AWS_REGION`): The aws region to request the secret, containing the governance keys, from. (default: eu-central-1)
-- `node` (environment variable: `EUR2CCD_SERVICE_NODE`): Comma separated ip and port of the node(s), to pull data from and to send the chain updates to. (ex. http://localhost:10000).
-- `rpc-token` (environment variable: `EUR2CCD_SERVICE_RPC_TOKEN`): GRPC interface access token for accessing the node. (default: rpcadmin) 
+- `node` (environment variable: `EUR2CCD_SERVICE_NODE`): Comma separated ip and
+  port of the node(s) GRPC V2 interface, to pull data from and to send the chain updates to. (ex. http://localhost:20000).
 - `log-level` (environment variable: `EUR2CCD_SERVICE_LOG_LEVEL`): Determines the log level, defaults to outputting info messages (and higher priorities).
 - `prometheus-port` (environment variable: `EUR2CCD_SERVICE_PROMETHEUS_PORT`): Port at which prometheus is served. (default: 8112)
 - `database-url` (environment variable: `EUR2CCD_SERVICE_DATABASE_URL`): MySQL connection url, where every reading and update is inserted at. (Optional)
