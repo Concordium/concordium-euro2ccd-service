@@ -10,7 +10,6 @@ pub const COINMARKETCAP_URL: &str = "https://pro-api.coinmarketcap.com/v2/crypto
 
 pub const FORCED_DRY_RUN_FILE: &str = "update.lockfile";
 
-pub const CHECK_SUBMISSION_STATUS_INTERVAL: u64 = 5; // seconds
 pub const RETRY_SUBMISSION_INTERVAL: u64 = 10; // seconds
 /// Expiry of the update instruction. This should be a bit less than
 /// [MAX_TIME_CHECK_SUBMISSION].

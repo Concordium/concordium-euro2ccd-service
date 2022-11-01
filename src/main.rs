@@ -8,10 +8,10 @@ mod sources;
 
 use anyhow::{ensure, Context};
 use clap::AppSettings;
-use concordium_rust_sdk::{endpoints, types};
+use concordium_rust_sdk::v2::{self, ChainParameters};
 use config::MAX_TIME_CHECK_SUBMISSION;
 use helpers::{compute_median, convert_big_fraction_to_exchange_rate, relative_change};
-use node::{check_update_status, get_block_summary, get_node_client, send_update};
+use node::{check_update_status, get_node_client, send_update};
 use num_rational::BigRational;
 use reqwest::Url;
 use secretsmanager::{get_governance_from_aws, get_governance_from_file};
@@ -29,19 +29,12 @@ use tokio::time::{interval_at, timeout, Duration, Instant};
 struct App {
     #[structopt(
         long = "node",
-        help = "Comma separated location(s) of the GRPC interface of the node(s).",
+        help = "Comma separated location(s) of the GRPC2 interface of the node(s).",
         default_value = "http://localhost:10000",
         use_delimiter = true,
         env = "EUR2CCD_SERVICE_NODE"
     )]
-    endpoint: Vec<endpoints::Endpoint>,
-    #[structopt(
-        long = "rpc-token",
-        help = "GRPC interface access token for accessing the node.",
-        default_value = "rpcadmin",
-        env = "EUR2CCD_SERVICE_RPC_TOKEN"
-    )]
-    token: String,
+    endpoint:                   Vec<v2::Endpoint>,
     #[structopt(
         long = "secret-names",
         help = "Secret names on AWS to get govenance keys from.",
@@ -49,7 +42,7 @@ struct App {
         conflicts_with = "local-keys",
         use_delimiter = true
     )]
-    secret_names: Vec<String>,
+    secret_names:               Vec<String>,
     #[structopt(
         long = "aws-region",
         help = "Which AWS region to get the keys from.",
@@ -57,28 +50,28 @@ struct App {
         default_value = config::AWS_REGION,
         conflicts_with = "local-keys",
     )]
-    region: String,
+    region:                     String,
     #[structopt(
         long = "update-interval",
         help = "How often to update the exchange rate on chain. (In seconds)",
         env = "EUR2CCD_SERVICE_UPDATE_INTERVAL",
         default_value = "1800"
     )]
-    update_interval: u32,
+    update_interval:            u32,
     #[structopt(
         long = "pull-interval",
         help = "How often to pull new exchange rate from each source. (In seconds)",
         env = "EUR2CCD_SERVICE_PULL_INTERVAL",
         default_value = "60"
     )]
-    pull_interval: u32,
+    pull_interval:              u32,
     #[structopt(
         long = "log-level",
         default_value = "info",
         help = "Maximum log level.",
         env = "EUR2CCD_SERVICE_LOG_LEVEL"
     )]
-    log_level: log::LevelFilter,
+    log_level:                  log::LevelFilter,
     #[structopt(
         long = "warning-increase-threshold",
         default_value = "30",
@@ -94,7 +87,7 @@ struct App {
                 halt (specified in percentage)",
         env = "EUR2CCD_SERVICE_HALT_INCREASE_THRESHOLD"
     )]
-    halt_increase_threshold: u16,
+    halt_increase_threshold:    u16,
     #[structopt(
         long = "warning-decrease-threshold",
         default_value = "15",
@@ -110,21 +103,21 @@ struct App {
                 halt (specified in percentage)",
         env = "EUR2CCD_SERVICE_HALT_DECREASE_THRESHOLD"
     )]
-    halt_decrease_threshold: u8,
+    halt_decrease_threshold:    u8,
     #[structopt(
         long = "prometheus-port",
         default_value = "8112",
         help = "Port where prometheus client will serve metrics",
         env = "EUR2CCD_SERVICE_PROMETHEUS_PORT"
     )]
-    prometheus_port: u16,
+    prometheus_port:            u16,
     #[structopt(
         long = "max-rates-saved",
         help = "Determines the size of the history of rates from the exchange",
         env = "EUR2CCD_SERVICE_MAX_RATES_SAVED",
         default_value = "60"
     )]
-    max_rates_saved: usize,
+    max_rates_saved:            usize,
     #[structopt(
         long = "test-sources",
         help = "If set to true, pulls exchange rate from each of the given locations (see \
@@ -133,52 +126,52 @@ struct App {
         use_delimiter = true,
         group = "testing"
     )]
-    test_sources: Vec<Url>,
+    test_sources:               Vec<Url>,
     #[structopt(
         long = "local-keys",
         help = "If given, the service uses local governance keys in specified file instead of \
                 pulling them from AWS.",
         env = "EUR2CCD_SERVICE_LOCAL_KEYS"
     )]
-    local_keys: Vec<PathBuf>,
+    local_keys:                 Vec<PathBuf>,
     #[structopt(
         long = "dry-run",
         help = "Do not perform updates, only log the update that would be performed.",
         env = "EUR2CCD_DRY_RUN"
     )]
-    dry_run: bool,
+    dry_run:                    bool,
     #[structopt(
         long = "database-url",
         help = "MySQL Connection url for a database, where every reading and update is inserted",
         env = "EUR2CCD_SERVICE_DATABASE_URL"
     )]
-    database_url: Option<String>,
+    database_url:               Option<String>,
     #[structopt(
         long = "coin-gecko",
         help = "If this flag is enabled, Coin Gecko is added to the list of sources",
         env = "EUR2CCD_SERVICE_COIN_GECKO"
     )]
-    coin_gecko: bool,
+    coin_gecko:                 bool,
     #[structopt(
         long = "coin-market-cap",
         help = "This option expects an API key for Coin Market Cap, and if given Coin Market Cap \
                 is added to the list of sources.",
         env = "EUR2CCD_SERVICE_COIN_MARKET_CAP"
     )]
-    coin_market_cap: Option<String>,
+    coin_market_cap:            Option<String>,
     #[structopt(
         long = "live-coin-watch",
         help = "This option expects an API key for Live Coin Watch, and if given Live Coin Watch \
                 is added to the list of sources.",
         env = "EUR2CCD_SERVICE_LIVE_COIN_WATCH"
     )]
-    live_coin_watch: Option<String>,
+    live_coin_watch:            Option<String>,
     #[structopt(
         long = "bitfinex",
         help = "If this flag is enabled, BitFinex is added to the list of sources",
         env = "EUR2CCD_SERVICE_BITFINEX"
     )]
-    bitfinex: bool,
+    bitfinex:                   bool,
 }
 
 /// Attempts to create a file, signalling that the service should be forced into
@@ -281,26 +274,17 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(prometheus::serve_prometheus(registry, app.prometheus_port));
     log::debug!("Started prometheus");
 
-    let mut node_client = get_node_client(app.endpoint.clone(), &app.token).await?;
-    let summary = get_block_summary(node_client.clone()).await?;
-    let (mut seq_number, initial_rate) = {
-        match &summary {
-            types::BlockSummary::V0 {
-                data,
-                ..
-            } => {
-                let seq_number = data.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
-                let initial_rate = data.updates.chain_parameters.micro_gtu_per_euro;
-                (seq_number, initial_rate)
-            }
-            types::BlockSummary::V1 {
-                data,
-                ..
-            } => {
-                let seq_number = data.updates.update_queues.micro_gtu_per_euro.next_sequence_number;
-                let initial_rate = data.updates.chain_parameters.micro_gtu_per_euro;
-                (seq_number, initial_rate)
-            }
+    let mut node_client = get_node_client(app.endpoint.clone()).await?;
+    let parameters = node_client.get_block_chain_parameters(v2::BlockIdentifier::LastFinal).await?;
+    let mut seq_number = node_client
+        .get_next_update_sequence_numbers(parameters.block_hash)
+        .await?
+        .response
+        .micro_ccd_per_euro;
+    let initial_rate = {
+        match &parameters.response {
+            ChainParameters::V0(params) => params.micro_ccd_per_euro,
+            ChainParameters::V1(params) => params.micro_ccd_per_euro,
         }
     };
     let mut prev_rate =
@@ -393,10 +377,11 @@ async fn main() -> anyhow::Result<()> {
         }
         .context("Could not obtain keys.")?;
         Some(
-            summary
+            parameters
+                .response
                 .common_update_keys()
                 .construct_update_signer(
-                    &summary.common_update_keys().micro_gtu_per_euro,
+                    &parameters.response.common_update_keys().micro_gtu_per_euro,
                     secret_keys,
                 )
                 .context("Failed to obtain keys.")?,
@@ -532,7 +517,7 @@ async fn main() -> anyhow::Result<()> {
                     // We expect that connection/authentication problems would be the reason sending
                     // the update failed, so we try to connect to a new node.
                     // (Any other problem would be have to be fixed manually)
-                    node_client = match get_node_client(app.endpoint.clone(), &app.token).await {
+                    node_client = match get_node_client(app.endpoint.clone()).await {
                         Ok(client) => client,
                         Err(e) => {
                             log::error!(
@@ -548,7 +533,7 @@ async fn main() -> anyhow::Result<()> {
 
             match timeout(
                 Duration::from_secs(MAX_TIME_CHECK_SUBMISSION),
-                check_update_status(submission_id, node_client.clone()),
+                check_update_status(submission_id, &mut node_client),
             )
             .await
             {

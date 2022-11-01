@@ -66,8 +66,7 @@ MemoryDenyWriteExecute=yes
 StateDirectory=concordium-eur2ccd-service
 WorkingDirectory=%S/concordium-eur2ccd-service
 
-Environment=EUR2CCD_SERVICE_NODE=http://127.0.0.1:10000
-Environment=EUR2CCD_SERVICE_RPC_TOKEN=rpcadmin
+Environment=EUR2CCD_SERVICE_NODE=http://127.0.0.1:20000
 Environment=EUR2CCD_SERVICE_UPDATE_INTERVAL=1800
 Environment=EUR2CCD_SERVICE_PULL_INTERVAL=60
 Environment=EUR2CCD_SERVICE_PROMETHEUS_PORT=8112
