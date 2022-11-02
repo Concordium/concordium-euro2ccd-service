@@ -4,7 +4,13 @@
 ARG ubuntu_version
 
 # Build the binary
-FROM rust:1.53 as builder
+FROM rust:1.62 as builder
+
+# Install protobuf
+RUN wget https://github.com/protocolbuffers/protobuf/releases/download/v3.15.3/protoc-3.15.3-linux-x86_64.zip \
+    && unzip protoc-3.15.3-linux-x86_64.zip \
+    && mv ./bin/protoc /usr/bin/protoc \
+    && chmod +x /usr/bin/protoc
 
 WORKDIR /build
 
