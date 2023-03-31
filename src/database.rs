@@ -38,7 +38,8 @@ pub fn create_tables(conn: &mut PooledConn) -> anyhow::Result<()> {
     }
 }
 
-pub fn write_read_rate(conn: &mut PooledConn, value: f64, label: &Source) -> mysql::Result<()> {
+pub fn write_read_rate(pool: &Pool, value: f64, label: &Source) -> mysql::Result<()> {
+    let mut conn = pool.get_conn()?;
     let statement = conn.prep(READ_RATE_STATEMENT)?;
     conn.exec_drop(statement, params! {
         "timestamp" => chrono::offset::Utc::now().naive_utc(),
@@ -47,7 +48,8 @@ pub fn write_read_rate(conn: &mut PooledConn, value: f64, label: &Source) -> mys
     })
 }
 
-pub fn write_update_rate(conn: &mut PooledConn, value: ExchangeRate) -> mysql::Result<()> {
+pub fn write_update_rate(pool: &Pool, value: ExchangeRate) -> mysql::Result<()> {
+    let mut conn = pool.get_conn()?;
     let statement = conn.prep(UPDATE_RATE_STATEMENT)?;
     conn.exec_drop(statement, params! {
         "timestamp" => chrono::offset::Utc::now().naive_utc(),

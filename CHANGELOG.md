@@ -1,5 +1,9 @@
 # Unreleased changes
 
+# 0.5.1
+
+- Make the service more robust against database connection reset.
+
 # 0.5.0
  - Support for protocol 5.
  - The service now uses V2 GRPC node API.
