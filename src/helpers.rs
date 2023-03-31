@@ -269,7 +269,8 @@ mod tests {
         let input = BigRational::new(num.into(), den.into());
         let result = convert_big_fraction_to_exchange_rate(&input);
         assert!(
-            (input - BigRational::new(result.numerator().into(), result.denominator().into())).abs()
+            (input - BigRational::new(result.numerator().into(), result.denominator().into()))
+                .abs()
                 < BigRational::new(1.into(), 100000000u64.into())
         );
     }
