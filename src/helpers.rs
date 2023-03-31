@@ -47,10 +47,7 @@ pub fn convert_big_fraction_to_exchange_rate(target: &BigRational) -> ExchangeRa
     loop {
         // Check if the bigints can fit into u64's.
         if let (Some(p), Some(q)) = (numerator.to_u64(), denominator.to_u64()) {
-            return ExchangeRate {
-                numerator:   p,
-                denominator: q,
-            };
+            return ExchangeRate::new_unchecked(p, q);
         };
         numerator /= 2;
         denominator /= 2;
@@ -264,15 +261,15 @@ mod tests {
     fn test_convert_u64(num: u64, den: u64) {
         let result =
             convert_big_fraction_to_exchange_rate(&BigRational::new(num.into(), den.into()));
-        assert_eq!(num, result.numerator);
-        assert_eq!(den, result.denominator);
+        assert_eq!(num, result.numerator());
+        assert_eq!(den, result.denominator());
     }
 
     fn test_convert_u128(num: u128, den: u128) {
         let input = BigRational::new(num.into(), den.into());
         let result = convert_big_fraction_to_exchange_rate(&input);
         assert!(
-            (input - BigRational::new(result.numerator.into(), result.denominator.into())).abs()
+            (input - BigRational::new(result.numerator().into(), result.denominator().into())).abs()
                 < BigRational::new(1.into(), 100000000u64.into())
         );
     }
