@@ -204,7 +204,7 @@ pub async fn pull_exchange_rate(
     rate_history_mutex: Arc<Mutex<RateHistory>>,
     pull_interval: u32,
     max_rates_saved: usize,
-    mut database_conn: Option<mysql::PooledConn>,
+    db_conn_pool: Option<mysql::Pool>,
 ) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
 
@@ -239,8 +239,8 @@ pub async fn pull_exchange_rate(
         };
         stats.reset_read_attempts(&source);
 
-        if let Some(ref mut conn) = database_conn {
-            if let Err(e) = crate::database::write_read_rate(conn, raw_rate, &source) {
+        if let Some(ref pool) = db_conn_pool {
+            if let Err(e) = crate::database::write_read_rate(pool, raw_rate, &source) {
                 stats.increment_failed_database_updates();
                 log::error!("{}: Unable to INSERT new reading: {}, due to: {}", source, raw_rate, e)
             };

@@ -248,17 +248,17 @@ async fn main() -> anyhow::Result<()> {
 
     let million = BigRational::from_integer(1000000.into()); // 1000000 microCCD/CCD
 
-    let (mut main_database_conn, connection_pool) = {
+    let db_conn_pool = {
         if let Some(url) = app.database_url {
             let pool = database::establish_connection_pool(&url)?;
             let mut main_conn = pool.get_conn()?;
             database::create_tables(&mut main_conn)?;
-            (Some(main_conn), Some(pool))
+            Some(pool)
         } else {
             log::warn!(
                 "No database url provided, service will not save to read and updated rates!"
             );
-            (None, None)
+            None
         }
     };
 
@@ -307,11 +307,6 @@ async fn main() -> anyhow::Result<()> {
             last_reading_timestamp: 0,
         }));
         rate_histories.push(rates_mutex.clone());
-        // Create a connection for this reader thread, if a database url was provided:
-        let reader_conn = match connection_pool.clone() {
-            Some(ref p) => Some(p.get_conn()?),
-            None => None,
-        };
 
         tokio::spawn(pull_exchange_rate(
             stats.clone(),
@@ -319,7 +314,7 @@ async fn main() -> anyhow::Result<()> {
             rates_mutex,
             pull_interval,
             max_rates_saved,
-            reader_conn,
+            db_conn_pool.clone(),
         ));
         Ok(())
     };
@@ -555,8 +550,8 @@ async fn main() -> anyhow::Result<()> {
                             new_rate,
                             submission_id
                         );
-                        if let Some(ref mut database_conn) = main_database_conn {
-                            if let Err(e) = database::write_update_rate(database_conn, new_rate) {
+                        if let Some(ref pool) = db_conn_pool {
+                            if let Err(e) = database::write_update_rate(pool, new_rate) {
                                 stats.increment_failed_database_updates();
                                 log::error!(
                                     "Unable to INSERT new update: {:?}, due to: {}",
