@@ -51,7 +51,7 @@ pub fn write_update_rate(conn: &mut PooledConn, value: ExchangeRate) -> mysql::R
     let statement = conn.prep(UPDATE_RATE_STATEMENT)?;
     conn.exec_drop(statement, params! {
         "timestamp" => chrono::offset::Utc::now().naive_utc(),
-        "numerator" => value.numerator,
-        "denominator" => value.denominator,
+        "numerator" => value.numerator(),
+        "denominator" => value.denominator(),
     })
 }

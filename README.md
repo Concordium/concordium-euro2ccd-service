@@ -2,9 +2,6 @@
 
 Service that pulls exchange rate from services, and uses them to perform microCCD/euro chain updates on the concordium blockchain.
 
-## Prerequisite
-In order to run/build the service ensure that protobuf is installed.
-
 ##  Run
 To run for testing, use:
 

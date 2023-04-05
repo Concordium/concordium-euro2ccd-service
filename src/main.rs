@@ -288,12 +288,12 @@ async fn main() -> anyhow::Result<()> {
         }
     };
     let mut prev_rate =
-        BigRational::new(initial_rate.numerator.into(), initial_rate.denominator.into());
+        BigRational::new(initial_rate.numerator().into(), initial_rate.denominator().into());
     log::debug!(
         "Loaded initial block summary, current exchange rate: {}/{}  (~ {}) microCCD/EUR",
-        initial_rate.numerator,
-        initial_rate.denominator,
-        initial_rate.numerator as f64 / initial_rate.denominator as f64
+        initial_rate.numerator(),
+        initial_rate.denominator(),
+        initial_rate.numerator() as f64 / initial_rate.denominator() as f64
     );
 
     // Vector that stores the rate history for each source. Each history is a queue
@@ -576,8 +576,8 @@ async fn main() -> anyhow::Result<()> {
         } else {
             log::info!(
                 "Dry run enabled, so skipping the update. New rate: {}/{}",
-                new_rate.numerator,
-                new_rate.denominator
+                new_rate.numerator(),
+                new_rate.denominator()
             );
         }
     }
