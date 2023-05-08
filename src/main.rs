@@ -405,12 +405,21 @@ async fn main() -> anyhow::Result<()> {
                         log::warn!("A source was dropped for update, no successful readings");
                         None
                     } else if rates_history.last_reading_timestamp < last_update_timestamp {
+                        let datetime = chrono::NaiveDateTime::from_timestamp_opt(
+                            rates_history.last_reading_timestamp,
+                            0,
+                        )
+                        .map_or(
+                            format!(
+                                "{} (timestamp due to conversion error)",
+                                rates_history.last_reading_timestamp
+                            ),
+                            |dt| dt.to_string(),
+                        );
+
                         log::warn!(
                             "A source was dropped for update, last succesful reading was at {}",
-                            chrono::NaiveDateTime::from_timestamp(
-                                rates_history.last_reading_timestamp,
-                                0
-                            )
+                            datetime,
                         );
                         None
                     } else {

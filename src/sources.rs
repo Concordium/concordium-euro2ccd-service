@@ -95,7 +95,7 @@ impl RequestExchangeRate for Source {
             } => serde_json::from_slice::<Vec<f64>>(response_bytes)?
                 .first()
                 .copied()
-                .ok_or(anyhow!("Unexpected missing value")),
+                .ok_or_else(|| anyhow!("Unexpected missing value")),
             Source::LiveCoinWatch(_) => {
                 Ok(serde_json::from_slice::<LiveCoinWatchResponse>(response_bytes)?.rate)
             }
@@ -111,7 +111,7 @@ impl RequestExchangeRate for Source {
                     .data
                     .ccd
                     .first()
-                    .ok_or(anyhow!("Unexpected missing value"))
+                    .ok_or_else(|| anyhow!("Unexpected missing value"))
                     .map(|ccd| ccd.quote.eur.price)
             }
             Source::CoinGecko => {
