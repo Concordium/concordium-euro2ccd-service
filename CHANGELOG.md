@@ -1,5 +1,7 @@
 # Unreleased changes
 
+- Set minimum supported Rust version to 1.65.
+
 # 0.5.1
 
 - Make the service more robust against database connection reset.
