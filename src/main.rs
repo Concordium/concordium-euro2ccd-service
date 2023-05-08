@@ -409,11 +409,13 @@ async fn main() -> anyhow::Result<()> {
                             rates_history.last_reading_timestamp,
                             0,
                         )
-                        .map_or(
-                            format!(
-                                "{} (timestamp due to conversion error)",
-                                rates_history.last_reading_timestamp
-                            ),
+                        .map_or_else(
+                            || {
+                                format!(
+                                    "{} (timestamp due to conversion error)",
+                                    rates_history.last_reading_timestamp
+                                )
+                            },
                             |dt| dt.to_string(),
                         );
 
