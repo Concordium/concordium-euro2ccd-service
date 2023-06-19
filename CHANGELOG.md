@@ -1,6 +1,9 @@
 # Unreleased changes
 
+# 0.6.0
+
 - Set minimum supported Rust version to 1.65.
+- Support for protocol 6. This version of the service now requires node version 6.
 
 # 0.5.1
 
