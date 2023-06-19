@@ -285,6 +285,7 @@ async fn main() -> anyhow::Result<()> {
         match &parameters.response {
             ChainParameters::V0(params) => params.micro_ccd_per_euro,
             ChainParameters::V1(params) => params.micro_ccd_per_euro,
+            ChainParameters::V2(params) => params.micro_ccd_per_euro,
         }
     };
     let mut prev_rate =
