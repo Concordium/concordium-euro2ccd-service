@@ -2,9 +2,10 @@
 # that will be added to the package. This should be the same as was used to
 # build the binaries.
 ARG ubuntu_version
+ARG rust_image_tag
 
 # Build the binary
-FROM rust:1.64 as builder
+FROM rust:$rust_image_tag as builder
 
 WORKDIR /build
 
