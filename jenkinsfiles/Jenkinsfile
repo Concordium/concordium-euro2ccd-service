@@ -12,7 +12,7 @@ pipeline {
         stage('Build') {
             steps {
                 sh '''\
-                    docker build -t ccd-service-builder --build-arg ubuntu_version=${base_image} -f scripts/debian-package/deb.Dockerfile .
+                    docker build -t ccd-service-builder --build-arg ubuntu_version=${base_image} --build-arg rust_image_tag=${rust_image_tag} -f scripts/debian-package/deb.Dockerfile .
 
                     set -euxo pipefail
 
