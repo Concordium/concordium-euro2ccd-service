@@ -13,7 +13,7 @@ COPY . /build
 
 RUN rustup component add rustfmt
 
-RUN cargo build --release
+RUN cargo build --release --locked
 
 FROM ubuntu:$ubuntu_version
 
