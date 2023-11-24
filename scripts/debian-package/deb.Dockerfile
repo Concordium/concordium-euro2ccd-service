@@ -28,4 +28,4 @@ DEBIAN_FRONTEND=noninteractive apt-get -y install debhelper dh-exec
 
 ENV binary=/build/concordium-eur2ccd
 
-#RUN /build/build.sh
+RUN /build/build.sh
