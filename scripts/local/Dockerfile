@@ -1,14 +1,11 @@
-ARG ubuntu_version
-ARG rust_image_tag
-
-FROM rust:$rust_image_tag as builder
+FROM rust:1.68 as builder
 
 WORKDIR /build
 
 COPY . .
-RUN cargo build --release --locked
+RUN cargo build --release
 
-FROM ubuntu:$ubuntu_version
+FROM ubuntu:20.04
 
 WORKDIR /build
 

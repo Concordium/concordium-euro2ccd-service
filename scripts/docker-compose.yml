@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword  # Replace with your desired root password
+      MYSQL_DATABASE: mydatabase         # Replace with your desired database name
+    volumes:
+      - mysql_data:/var/lib/mysql
+  eur2ccd:
+    build:
+      context: ..
+      dockerfile: ./scripts/local/Dockerfile
+      args:
+        ubuntu_version: 20.04
+        rust_image_tag: 1.68
+    image: eur2ccd
+    command: [ "--database-url", "mysql://root:rootpassword@mysql:3306/mydatabase",
+                  "--node", "http://172.31.16.20:20000", "--dry-run", "true", "--test-sources", "http://exchange:8111/rate" ]
+  exchange:
+    build:
+      context: ../test_exchange
+      dockerfile: ./Dockerfile
+    image: test_exchange
+    command: [ "--port", "8111" ]
+
+
+volumes:
+  mysql_data:
