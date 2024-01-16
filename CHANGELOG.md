@@ -1,5 +1,9 @@
 # Unreleased changes
 
+# 0.6.1
+
+- Fix coin market cap response, by using slug instead of symbol to avoid mutiple answers.
+
 # 0.6.0
 
 - Set minimum supported Rust version to 1.65.
