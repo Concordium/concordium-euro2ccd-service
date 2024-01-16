@@ -107,12 +107,7 @@ impl RequestExchangeRate for Source {
                         response.status.error_code
                     ))));
                 }
-                Ok(response
-                    .data
-                    .ccd
-                    .quote
-                    .eur
-                    .price)
+                Ok(response.data.ccd.quote.eur.price)
             }
             Source::CoinGecko => {
                 Ok(serde_json::from_slice::<CoinGeckoResponse>(response_bytes)?.concordium.eur)
