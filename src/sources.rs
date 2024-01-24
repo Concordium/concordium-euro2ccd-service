@@ -107,12 +107,7 @@ impl RequestExchangeRate for Source {
                         response.status.error_code
                     ))));
                 }
-                response
-                    .data
-                    .ccd
-                    .first()
-                    .ok_or_else(|| anyhow!("Unexpected missing value"))
-                    .map(|ccd| ccd.quote.eur.price)
+                Ok(response.data.ccd.quote.eur.price)
             }
             Source::CoinGecko => {
                 Ok(serde_json::from_slice::<CoinGeckoResponse>(response_bytes)?.concordium.eur)
@@ -286,8 +281,9 @@ struct CoinMarketCapResponseInfo {
 
 #[derive(SerdeDeserialize)]
 struct CoinMarketCapResponseData {
-    #[serde(rename = "CCD")]
-    ccd: Vec<CoinMarketCapResponseInfo>,
+    // 18031 is the id of CCD token on Coin market cap
+    #[serde(rename = "18031")]
+    ccd: CoinMarketCapResponseInfo,
 }
 
 #[derive(SerdeDeserialize)]
