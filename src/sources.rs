@@ -122,14 +122,15 @@ impl RequestExchangeRate for Source {
  * on_fail is invoked after every failed attempt of the request, but only if
  * there are any retries left.
  */
-async fn request_with_backoff<'a, Fut: 'a, T>(
+async fn request_with_backoff<'a, Fut, T>(
     request_fn: impl Fn() -> Fut,
     on_fail: impl Fn(u64),
     initial_delay: u64,
     max_retries: u64,
 ) -> Option<T>
 where
-    Fut: Future<Output = Option<T>>, {
+    Fut: Future<Output = Option<T>>,
+    Fut: 'a, {
     let mut timeout = initial_delay;
     let mut retries = max_retries;
     loop {
@@ -210,7 +211,7 @@ pub async fn pull_exchange_rate(
         interval.tick().await;
         log::debug!("{}: Polling for exchange rate", source);
 
-        let raw_rate = match request_with_backoff(
+        let request_with_backoff = request_with_backoff(
             || request_exchange_rate(&source, client.clone()),
             |timeout: u64| {
                 log::warn!(
@@ -223,8 +224,9 @@ pub async fn pull_exchange_rate(
             INITIAL_RETRY_INTERVAL,
             MAX_RETRIES,
         )
-        .await
-        {
+        .await;
+
+        let raw_rate = match request_with_backoff {
             Some(i) => i,
             None => {
                 log::error!("{}: Request failed. Retries exhausted", source);
