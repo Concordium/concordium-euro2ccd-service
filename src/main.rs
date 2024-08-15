@@ -406,7 +406,7 @@ async fn main() -> anyhow::Result<()> {
                         log::warn!("A source was dropped for update, no successful readings");
                         None
                     } else if rates_history.last_reading_timestamp < last_update_timestamp {
-                        let datetime = chrono::NaiveDateTime::from_timestamp_opt(
+                        let datetime = chrono::DateTime::from_timestamp(
                             rates_history.last_reading_timestamp,
                             0,
                         )
