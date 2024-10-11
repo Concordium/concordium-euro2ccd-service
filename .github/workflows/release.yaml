@@ -1,0 +1,43 @@
+name: Build and Push Database Exporter
+
+on:
+  push:
+    branches:
+      - ekw/gh-actions/release
+
+env:
+  UBUNTU_VERSION: '20.04'
+  GHC_VERSION: '9.6.4'
+  STATIC_LIBRARIES_IMAGE_TAG: 'rust-1.73.0_ghc-9.6.4'
+  VERSION: '7.0.5-0'
+  STACK_VERSION: '2.7.5'
+  FLATBUFFERS_VERSION: '22.12.06'
+  S3_BUCKET: "s3://eur2ccd.concordium.com"
+  PKG_FILE: "concordium-eur2ccd_${version}_amd64.deb"
+  OUT_FILE: "concordium-eur2ccd_${version}-${build}_amd64.deb"
+  OUT_PATH: "${S3_BUCKET}/${OUT_FILE}"
+  OUT_DIR: sh(script: 'mktemp -d', returnStdout: true).trim()
+
+jobs:
+  release-euro2ccd:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VERSION }}
+          submodules: recursive
+
+      - name: Build
+        run: |
+          docker build -t ccd-service-builder --build-arg ubuntu_version=${base_image} --build-arg rust_image_tag=${rust_image_tag} -f scripts/debian-package/deb.Dockerfile .
+          set -euxo pipefail
+          id=$(docker create ccd-service-builder)
+          docker cp $id:/build/pkg-root/ eur2ccd-deb
+          docker rm $id
+          mv eur2ccd-deb/$PKG_FILE .
+
+      #- name: Publish
+      #  run: |
+      #    aws s3 cp ${PKG_FILE} "${OUT_PATH}"
+  publish:
