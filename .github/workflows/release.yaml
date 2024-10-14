@@ -13,10 +13,10 @@ env:
   STACK_VERSION: '2.7.5'
   FLATBUFFERS_VERSION: '22.12.06'
   EUR2CCD_VERSION: '0.6.1'
-  S3_BUCKET: "s3://eur2ccd.concordium.com"
-  PKG_FILE: "concordium-eur2ccd_${{ EUR2CCD_VERSION }}_amd64.deb"
+  S3_BUCKET: 's3://eur2ccd.concordium.com'
+  PKG_FILE: 'concordium-eur2ccd_${{ EUR2CCD_VERSION }}_amd64.deb'
   #OUT_FILE: "concordium-eur2ccd_${{ EUR2CCD_VERSION} }-${{build}}_amd64.deb"
-  OUT_PATH: "${S3_BUCKET}/${OUT_FILE}"
+  #OUT_PATH: '${S3_BUCKET}/${OUT_FILE}''
   #OUT_DIR: sh(script: 'mktemp -d', returnStdout: true).trim()
 
 jobs:
