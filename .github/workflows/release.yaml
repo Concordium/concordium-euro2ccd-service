@@ -30,7 +30,7 @@ jobs:
 
       - name: Build
         run: |
-          docker build -t ccd-service-builder --build-arg ubuntu_version=${base_image} --build-arg rust_image_tag=${rust_image_tag} -f scripts/debian-package/deb.Dockerfile .
+          docker build -t ccd-service-builder --build-arg ubuntu_version=${{ env.UBUNTU_VERSION }} --build-arg rust_image_tag=${{ env.STATIC_LIBRARIES_TAG }} -f scripts/debian-package/deb.Dockerfile .
           set -euxo pipefail
           id=$(docker create ccd-service-builder)
           docker cp $id:/build/pkg-root/ eur2ccd-deb
