@@ -40,4 +40,4 @@ jobs:
       #- name: Publish
       #  run: |
       #    aws s3 cp ${PKG_FILE} "${OUT_PATH}"
-  publish:
+  #publish:
