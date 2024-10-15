@@ -32,4 +32,4 @@ jobs:
 
       - name: Publish
         run: |
-          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb "${{ env.S3_Bucket }}/concordium-eur2ccd_${{ EUR2CCD_VERSION }}-${{ env.EUR2CCD_VERSION }}_amd64.deb"
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb "${{ env.S3_Bucket }}/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}-${{ env.EUR2CCD_VERSION }}_amd64.deb"
