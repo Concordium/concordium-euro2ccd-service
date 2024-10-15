@@ -8,7 +8,7 @@ on:
 env:
   UBUNTU_VERSION: '22.04'
   RUST_IMAGE_TAG: '1.73.0'
-  EUR2CCD_VERSION: '0.6.1'
+  EUR2CCD_VERSION: '0.5.2'
   S3_BUCKET: 's3://eur2ccd.concordium.com'
 
 jobs:
@@ -21,14 +21,14 @@ jobs:
           ref: main
           submodules: recursive
 
-      - name: Build
-        run: |
-          docker build -t ccd-service-builder --build-arg ubuntu_version=${{ env.UBUNTU_VERSION }} --build-arg rust_image_tag=${{ env.RUST_IMAGE_TAG }} -f scripts/debian-package/deb.Dockerfile .
-          set -euxo pipefail
-          id=$(docker create ccd-service-builder)
-          docker cp $id:/build/pkg-root/ eur2ccd-deb
-          docker rm $id
-          mv eur2ccd-deb/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb .
+      #- name: Build
+      #  run: |
+      #    docker build -t ccd-service-builder --build-arg ubuntu_version=${{ env.UBUNTU_VERSION }} --build-arg rust_image_tag=${{ env.RUST_IMAGE_TAG }} -f scripts/debian-package/deb.Dockerfile .
+      #    set -euxo pipefail
+      #    id=$(docker create ccd-service-builder)
+      #    docker cp $id:/build/pkg-root/ eur2ccd-deb
+      #    docker rm $id
+      #    mv eur2ccd-deb/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb .
 
       - name: Publish
         run: |
