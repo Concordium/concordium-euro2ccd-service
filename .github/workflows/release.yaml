@@ -23,6 +23,13 @@ jobs:
           ref: ${{ env.EUR2CCD_VERSION }}-0
           submodules: recursive
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: "eu-west-1"
+          role-to-assume: "arn:aws:iam::192549843005:role/github-eur2ccd"
+          role-session-name: ReleaseEur2ccdSession
+
       - name: Build
         run: |
           docker build -t ccd-service-builder --build-arg ubuntu_version=${{ env.UBUNTU_VERSION }} --build-arg rust_image_tag=${{ env.RUST_IMAGE_TAG }} -f scripts/debian-package/deb.Dockerfile .
