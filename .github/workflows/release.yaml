@@ -2,8 +2,9 @@ name: Build and Push Database Exporter
 
 on:
   push:
-    paths:
-      - .github/workflowf/release.yaml
+    tags: '*.*.*-*'
+  workflow_dispatch: # trigger manually (for debugging)
+    
 
 env:
   UBUNTU_VERSION: '22.04'
