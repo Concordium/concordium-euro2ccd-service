@@ -3,7 +3,7 @@ name: Build and Push Database Exporter
 on:
   push:
     branch:
-      - ekw/gc-actions/release
+      - ekw/gh-actions/release
 
 env:
   UBUNTU_VERSION: '22.04'
