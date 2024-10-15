@@ -2,9 +2,8 @@ name: Build and Push Database Exporter
 
 on:
   push:
-    tags: '*.*.*-*'
-  workflow_dispatch: # trigger manually (for debugging)
-    
+    branch:
+      - ekw/gc-actions/release
 
 env:
   UBUNTU_VERSION: '22.04'
