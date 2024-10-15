@@ -10,7 +10,7 @@ env:
   RUST_IMAGE_TAG: '1.73.0'
   EUR2CCD_VERSION: '0.6.1'
   BUILD_VERSION: '20'
-  S3_BUCKET: 's3://eur2ccd.concordium.com'
+  S3_BUCKET: "s3://eur2ccd.concordium.com"
 
 permissions:
   id-token: write
@@ -45,4 +45,4 @@ jobs:
 
       - name: Publish
         run: |
-          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb "${{ env.S3_Bucket }}/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}-${{ env.BUILD_VERSION }}_amd64.deb"
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb ${{ env.S3_Bucket }}/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}-${{ env.BUILD_VERSION }}_amd64.deb
