@@ -19,7 +19,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.EUR2CCD_VERSION }}
+          ref: ${{ env.EUR2CCD_VERSION }}-0
           submodules: recursive
 
       - name: Build
