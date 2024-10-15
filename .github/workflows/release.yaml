@@ -15,6 +15,7 @@ env:
 jobs:
   release-euro2ccd:
     runs-on: ubuntu-latest
+    environment: upload-s3
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
