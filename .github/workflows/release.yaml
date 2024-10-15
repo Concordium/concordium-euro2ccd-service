@@ -3,20 +3,13 @@ name: Build and Push Database Exporter
 on:
   push:
     branches:
-      - ekw/gh-actions/release
+      - main
 
 env:
   UBUNTU_VERSION: '22.04'
-  GHC_VERSION: '9.6.4'
-  STATIC_LIBRARIES_IMAGE_TAG: '1.73.0'
-  VERSION: '7.0.5-0'
-  STACK_VERSION: '2.7.5'
-  FLATBUFFERS_VERSION: '22.12.06'
+  RUST_IMAGE_TAG: '1.73.0'
   EUR2CCD_VERSION: '0.6.1'
   S3_BUCKET: 's3://eur2ccd.concordium.com'
-  #OUT_FILE: "concordium-eur2ccd_${{ EUR2CCD_VERSION} }-${{build}}_amd64.deb"
-  #OUT_PATH: '${S3_BUCKET}/${OUT_FILE}''
-  #OUT_DIR: sh(script: 'mktemp -d', returnStdout: true).trim()
 
 jobs:
   release-euro2ccd:
@@ -30,14 +23,13 @@ jobs:
 
       - name: Build
         run: |
-          docker build -t ccd-service-builder --build-arg ubuntu_version=${{ env.UBUNTU_VERSION }} --build-arg rust_image_tag=${{ env.STATIC_LIBRARIES_IMAGE_TAG }} -f scripts/debian-package/deb.Dockerfile .
+          docker build -t ccd-service-builder --build-arg ubuntu_version=${{ env.UBUNTU_VERSION }} --build-arg rust_image_tag=${{ env.RUST_IMAGE_TAG }} -f scripts/debian-package/deb.Dockerfile .
           set -euxo pipefail
           id=$(docker create ccd-service-builder)
           docker cp $id:/build/pkg-root/ eur2ccd-deb
           docker rm $id
           mv eur2ccd-deb/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb .
 
-      #- name: Publish
-      #  run: |
-      #    aws s3 cp ${PKG_FILE} "${OUT_PATH}"
-  #publish:
+      - name: Publish
+        run: |
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb "${{ env.S3_Bucket }}/concordium-eur2ccd_${{ EUR2CCD_VERSION }}-${{ env.EUR2CCD_VERSION }}_amd64.deb"
