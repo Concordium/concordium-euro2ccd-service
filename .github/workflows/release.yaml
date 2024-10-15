@@ -12,6 +12,10 @@ env:
   BUILD_VERSION: '20'
   S3_BUCKET: 's3://eur2ccd.concordium.com'
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   release-euro2ccd:
     runs-on: ubuntu-latest
