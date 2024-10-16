@@ -3,13 +3,13 @@ name: Build and Push Database Exporter
 on:
   push:
     branches:
-      - "ekw/gh-actions/release"
+      - ekw/gh-actions/release
 
 env:
   UBUNTU_VERSION: '22.04'
   RUST_IMAGE_TAG: '1.73.0'
-  EUR2CCD_VERSION: ${{GITHUB_REF#refs/tags/*-}}
-  BUILD_VERSION: '0'
+  EUR2CCD_VERSION: '0.6.1'
+  BUILD_VERSION: 'test'
   S3_BUCKET: s3://eur2ccd.concordium.com
 
 permissions:
@@ -24,7 +24,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ GITHUB_REF#refs/tags/*- }}-${{ env.BUILD_VERSION }}
+          ref: ${{ env.EUR2CCD_VERSION }}-0
           submodules: recursive
 
       - name: Configure AWS Credentials
@@ -36,7 +36,7 @@ jobs:
 
       - name: Check built packages
         run: |
-          echo S3_OBJ=$(aws s3 ls s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ GITHUB_REF#refs/tags/*- }}-${{ env.BUILD_VERSION }}_amd64.deb) >> $GITHUB_ENV
+          echo S3_OBJ=$(aws s3 ls s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}-${{ env.BUILD_VERSION }}_amd64.deb) >> $GITHUB_ENV
 
       - name: Build
         if: ${{ env.S3_OBJ == '' }}
@@ -46,9 +46,9 @@ jobs:
           id=$(docker create ccd-service-builder)
           docker cp $id:/build/pkg-root/ eur2ccd-deb
           docker rm $id
-          mv eur2ccd-deb/concordium-eur2ccd_${{ GITHUB_REF#refs/tags/*-N }}_amd64.deb .
+          mv eur2ccd-deb/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb .
 
       - name: Publish
         if: ${{ env.S3_OBJ == '' }}
         run: |
-          aws s3 cp concordium-eur2ccd_${{ GITHUB_REF#refs/tags/*- }}_amd64.deb s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ GITHUB_REF#refs/tags/*- }}-${{ env.BUILD_VERSION }}_amd64.deb
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}-${{ env.BUILD_VERSION }}_amd64.deb
