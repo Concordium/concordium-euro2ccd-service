@@ -34,7 +34,12 @@ jobs:
           role-to-assume: "arn:aws:iam::192549843005:role/github-eur2ccd"
           role-session-name: ReleaseEur2ccdSession
 
+      - name: Check built packages
+        run: |
+          echo S3_OBJ=$(aws s3 ls s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}-${{ env.BUILD_VERSION }}_amd64.deb) >> $GITHUB_ENV
+
       - name: Build
+        if: ${{ env.S3_OBJ == '' }}
         run: |
           docker build -t ccd-service-builder --build-arg ubuntu_version=${{ env.UBUNTU_VERSION }} --build-arg rust_image_tag=${{ env.RUST_IMAGE_TAG }} -f scripts/debian-package/deb.Dockerfile .
           set -euxo pipefail
@@ -44,5 +49,6 @@ jobs:
           mv eur2ccd-deb/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb .
 
       - name: Publish
+        if: ${{ env.S3_OBJ == '' }}
         run: |
           aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}-${{ env.BUILD_VERSION }}_amd64.deb
