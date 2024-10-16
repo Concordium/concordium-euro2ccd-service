@@ -31,7 +31,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: "eu-west-1"
-          role-to-assume: "arn:aws:iam::192549843005:role/github-eur2ccd"
+          role-to-assume: "arn:aws:iam::192549843005:role/github_eur2ccd"
           role-session-name: ReleaseEur2ccdSession
 
       - name: Check built packages
