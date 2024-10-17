@@ -2,8 +2,8 @@ name: Build and Push Database Exporter
 
 on:
   push:
-    branches:
-      - ekw/gh-actions/release
+    tags:
+      - "*.*.*-*"
 
 env:
   UBUNTU_VERSION: '22.04'
@@ -24,7 +24,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.EUR2CCD_VERSION }}-0
+          ref: ${{ env.EUR2CCD_VERSION }}-${{ env.build_VERSION }}
           submodules: recursive
 
       - name: Configure AWS Credentials
