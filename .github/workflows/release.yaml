@@ -29,7 +29,7 @@ jobs:
 
       - name: Get the tag
         id: get_version
-        run: echo TAG=${{github.ref_name##ekw/}} >> $GITHUB_ENV
+        run: echo ""::set-output name=fragment::${github.ref_name##ekw/}"
 
       
 
