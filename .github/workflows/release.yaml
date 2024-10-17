@@ -29,7 +29,9 @@ jobs:
 
       - name: Get the tag
         id: get_version
-        run: echo "::set-output name=tag::${github.ref_name##ekw/}"
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: echo "::set-output name=tag::${BRANCH#ekw/}"
 
       
 
