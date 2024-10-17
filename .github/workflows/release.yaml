@@ -24,7 +24,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.EUR2CCD_VERSION }}-${{ env.build_VERSION }}
+          ref: ${{ GITHUB_REF#refs/tags/* }}
           submodules: recursive
 
       - name: Configure AWS Credentials
