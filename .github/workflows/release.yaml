@@ -9,7 +9,6 @@ env:
   UBUNTU_VERSION: '22.04'
   RUST_IMAGE_TAG: '1.73.0'
   EUR2CCD_VERSION: '0.6.1'
-  BUILD_VERSION: 'test'
   S3_BUCKET: s3://eur2ccd.concordium.com
 
 permissions:
@@ -21,10 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
+      - name: Get the tag
+        id: get_version
+        run: echo TAG=${{GITHUB_REF#refs/tags/*}} >> $GITHUB_ENV
+
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ GITHUB_REF#refs/tags/* }}
+          ref: ${{ env.TAG }}
           submodules: recursive
 
       - name: Configure AWS Credentials
@@ -36,7 +39,7 @@ jobs:
 
       - name: Check built packages
         run: |
-          echo S3_OBJ=$(aws s3 ls s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}-${{ env.BUILD_VERSION }}_amd64.deb) >> $GITHUB_ENV
+          echo S3_OBJ=$(aws s3 ls s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.TAG }}_amd64.deb) >> $GITHUB_ENV
 
       - name: Build
         if: ${{ env.S3_OBJ == '' }}
@@ -51,4 +54,4 @@ jobs:
       - name: Publish
         if: ${{ env.S3_OBJ == '' }}
         run: |
-          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}-${{ env.BUILD_VERSION }}_amd64.deb
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.TAG }}_amd64.deb 
