@@ -2,13 +2,14 @@ name: Build and Push Database Exporter
 
 on:
   push:
-    tags:
-      - "*.*.*-*"
+    branches:
+      - "ekw/gh-actions/release"
 
 env:
   UBUNTU_VERSION: '22.04'
   RUST_IMAGE_TAG: '1.73.0'
   EUR2CCD_VERSION: '0.6.1'
+  BUILD_VERSION: '0'
   S3_BUCKET: s3://eur2ccd.concordium.com
 
 permissions:
@@ -20,15 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: "0.6.1-0"
+          submodules: recursive
+          
       - name: Get the tag
         id: get_version
         run: echo TAG=${{GITHUB_REF#refs/tags/*}} >> $GITHUB_ENV
 
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
-          submodules: recursive
+      
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
