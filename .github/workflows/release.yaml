@@ -27,7 +27,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: "0.6.1-0"
+          ref: ${{ github.ref_name }}
           submodules: recursive
 
       - name: Configure AWS Credentials
