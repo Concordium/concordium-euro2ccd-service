@@ -21,19 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
+      - name: Get the tag
+        id: get_version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: echo "::set-output name=tag::${TAG#-*}"
+
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           ref: "0.6.1-0"
           submodules: recursive
-
-      - name: Get the tag
-        id: get_version
-        env:
-          BRANCH: ${{ github.ref_name }}
-        run: echo "::set-output name=tag::${BRANCH#ekw/}"
-
-      
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -44,7 +42,7 @@ jobs:
 
       - name: Check built packages
         run: |
-          echo S3_OBJ=$(aws s3 ls s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.TAG }}_amd64.deb) >> $GITHUB_ENV
+          echo S3_OBJ=$(aws s3 ls s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ github.ref_name }}_amd64.deb) >> $GITHUB_ENV
 
       - name: Build
         if: ${{ env.S3_OBJ == '' }}
@@ -59,4 +57,4 @@ jobs:
       - name: Publish
         if: ${{ env.S3_OBJ == '' }}
         run: |
-          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ steps.get_version.outputs.tag }}-test_amd64.deb 
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ github.ref_name }}-test_amd64.deb 
