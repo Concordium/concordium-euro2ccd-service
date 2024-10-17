@@ -26,7 +26,7 @@ jobs:
         with:
           ref: "0.6.1-0"
           submodules: recursive
-          
+
       - name: Get the tag
         id: get_version
         run: echo TAG=${{GITHUB_REF#refs/tags/*}} >> $GITHUB_ENV
@@ -57,4 +57,4 @@ jobs:
       - name: Publish
         if: ${{ env.S3_OBJ == '' }}
         run: |
-          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.TAG }}_amd64.deb 
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ env.TAG }}-test_amd64.deb 
