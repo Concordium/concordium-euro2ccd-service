@@ -25,7 +25,7 @@ jobs:
         id: get_version
         env:
           TAG: ${{ github.ref_name }}
-        run: echo "name=tag::${TAG##-*}" >> $GITHUB_ENV
+        run: echo "tag=${TAG##-*}" >> $GITHUB_ENV
 
       - name: Checkout Repository
         uses: actions/checkout@v4
