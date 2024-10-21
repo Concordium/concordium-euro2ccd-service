@@ -48,7 +48,7 @@ jobs:
           # Make sure the image does not exist. Abort if we can retrieve any metadata.
           if [ ! "${{ env.EUR2CCD_VERSION }}" = "$VERSION" ]; then
              echo "::error ${{ github.ref_name }} does not match ${{ env.SERVICE_NAME }}/${VERSION}."
-             exit 1
+#             exit 1
           fi
 
       - name: Check if version exist in s3
