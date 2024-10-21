@@ -2,16 +2,15 @@ name: Build and Push Database Exporter
 
 on:
   push:
-    branches:
-      - ekw/gh-actions/release
-#    tags:
-#      - "*.*.*-*"
+    tags:
+      - "*.*.*-*"
 
 env:
   UBUNTU_VERSION: '22.04'
   RUST_IMAGE_TAG: '1.73.0'
   S3_BUCKET: s3://eur2ccd.concordium.com
-  OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_0.6.1-0_amd64.deb"
+  OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ github.ref_name }}_amd64.deb"
+  IAM_ROLE: "arn:aws:iam::192549843005:role/github_eur2ccd"
 
 permissions:
   id-token: write
@@ -25,7 +24,7 @@ jobs:
       - name: Get the eur2ccd version
         env:
           TAG: ${{ github.ref_name }}
-        run: echo EUR2CCD_VERSION=0.6.1 >> $GITHUB_ENV #echo "EUR2CCD_VERSION=${TAG%%-*}" >> $GITHUB_ENV
+        run: echo "EUR2CCD_VERSION=${TAG%%-*}" >> $GITHUB_ENV
 
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -33,11 +32,11 @@ jobs:
           ref: ${{ github.ref_name }}
           submodules: recursive
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        - name: Configure AWS Credentials
+          uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: "eu-west-1"
-          role-to-assume: "arn:aws:iam::192549843005:role/github_eur2ccd"
+          role-to-assume: ${{ env.IAM_ROLE }}
           role-session-name: ReleaseEur2ccdSession
 
       - name: Check built packages
@@ -47,10 +46,8 @@ jobs:
               echo "error: ${{env.OUTFILE}} already exists"
               false
           fi
-#          echo S3_OBJ=$(aws s3 ls s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ github.ref_name }}_amd64.deb) >> $GITHUB_ENV
 
       - name: Build
-#        if: ${{ env.S3_OBJ == '' }}
         run: |
           set -euxo pipefail
           docker build -t ccd-service-builder --build-arg ubuntu_version=${{ env.UBUNTU_VERSION }} --build-arg rust_image_tag=${{ env.RUST_IMAGE_TAG }} -f scripts/debian-package/deb.Dockerfile .
@@ -58,6 +55,5 @@ jobs:
           docker cp $id:/build/pkg-root/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb .
 
       - name: Publish
-#        if: ${{ env.S3_OBJ == '' }}
         run: |
-#          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb ${{ env.OUTFILE }} 
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb ${{ env.OUTFILE }} 
