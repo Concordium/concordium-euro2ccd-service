@@ -60,4 +60,4 @@ jobs:
       - name: Publish
 #        if: ${{ env.S3_OBJ == '' }}
         run: |
-          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb ${{ OUTFILE }} 
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb ${{ env.OUTFILE }} 
