@@ -11,7 +11,7 @@ env:
   UBUNTU_VERSION: '22.04'
   RUST_IMAGE_TAG: '1.73.0'
   S3_BUCKET: s3://eur2ccd.concordium.com
-  OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_0.6.1-0_amd64.deb" #${{ github.ref_name }}_amd64.deb"
+  OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_0.6.1-test_amd64.deb" #${{ github.ref_name }}_amd64.deb"
   IAM_ROLE: "arn:aws:iam::192549843005:role/github_eur2ccd" 
 
 permissions:
