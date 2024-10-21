@@ -42,9 +42,9 @@ jobs:
 
       - name: Check built packages
         run: |
-          totalFoundObjects=$(aws s3 ls "$OUTFILE" --summarize | grep "Total Objects: " | sed "s/[^0-9]*//g")
+          totalFoundObjects=$(aws s3 ls "${{env.OUTFILE}}" --summarize | grep "Total Objects: " | sed "s/[^0-9]*//g")
           if [ "$totalFoundObjects" -ne "0" ]; then
-              echo "error: $OUTFILE already exists"
+              echo "error: ${{env.OUTFILE}} already exists"
               false
           fi
 #          echo S3_OBJ=$(aws s3 ls s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ github.ref_name }}_amd64.deb) >> $GITHUB_ENV
