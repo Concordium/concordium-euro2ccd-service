@@ -11,7 +11,7 @@ env:
   UBUNTU_VERSION: '22.04'
   RUST_IMAGE_TAG: '1.73.0'
   S3_BUCKET: s3://eur2ccd.concordium.com
-  OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ github.ref_name }}_amd64.deb"
+  OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_0.6.1-0_amd64.deb"
 
 permissions:
   id-token: write
@@ -60,4 +60,4 @@ jobs:
       - name: Publish
 #        if: ${{ env.S3_OBJ == '' }}
         run: |
-          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb ${{ env.OUTFILE }} 
+#          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb ${{ env.OUTFILE }} 
