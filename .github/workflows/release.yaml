@@ -2,16 +2,14 @@ name: Build and Push Database Exporter
 
 on:
   push:
-    branches:
-      - ekw/gh-actions/release
-#    tags:
-#      - "*.*.*-*"
+    tags:
+      - "*.*.*-*"
 
 env:
   UBUNTU_VERSION: '22.04'
   RUST_IMAGE_TAG: '1.73.0'
   S3_BUCKET: s3://eur2ccd.concordium.com
-  OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_0.6.1-0_amd64.deb" #${{ github.ref_name }}_amd64.deb"
+  OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ github.ref_name }}_amd64.deb"
   IAM_ROLE: "arn:aws:iam::192549843005:role/github_eur2ccd" 
 
 permissions:
@@ -26,7 +24,7 @@ jobs:
       - name: Get the eur2ccd version
         env:
           TAG: ${{ github.ref_name }}
-        run: echo EUR2CCD_VERSION="0.6.1" >> $GITHUB_ENV #echo "EUR2CCD_VERSION=${TAG%%-*}" >> $GITHUB_ENV
+        run: echo "EUR2CCD_VERSION=${TAG%%-*}" >> $GITHUB_ENV
 
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -48,6 +46,7 @@ jobs:
           # Make sure the image does not exist. Abort if we can retrieve any metadata.
           if [ ! "${{ env.EUR2CCD_VERSION }}" = "$VERSION" ]; then
              echo "::error ${{ github.ref_name }} does not match ${{ env.SERVICE_NAME }}/${VERSION}."
+             exit 1
           fi
 
       - name: Check if version exist in s3
@@ -56,8 +55,7 @@ jobs:
           totalFoundObjects=$(aws s3 ls "${{env.OUTFILE}}")
           ec=$?
           if [ $ec -ne "1" ]; then
-              echo "error: ${{env.OUTFILE}} already exists"
-              echo $ec
+              echo "error: ${{env.OUTFILE}} already exists or you do not have access"
               exit 1
           fi
 
@@ -70,4 +68,4 @@ jobs:
 
       - name: Publish
         run: |
-#          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb ${{ env.OUTFILE }} 
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb ${{ env.OUTFILE }} 
