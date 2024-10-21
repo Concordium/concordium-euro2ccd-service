@@ -32,19 +32,29 @@ jobs:
           ref: ${{ github.ref_name }}
           submodules: recursive
 
-        - name: Configure AWS Credentials
-          uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: "eu-west-1"
           role-to-assume: ${{ env.IAM_ROLE }}
           role-session-name: ReleaseEur2ccdSession
+      
+      - name: Get version from cargo.toml
+        run: |
+          VERSION=$(yq .package.version Cargo.toml)
+          echo "::notice FULL_IMAGE_TAG=${FULL_IMAGE_TAG}"
+          # Make sure the image does not exist. Abort if we can retrieve any metadata.
+          if [ ! "${{ env.EUR2CCD_VERSION }}" = "$VERSION" ]; then
+             echo "::error ${{ github.ref_name }} does not match ${{ env.SERVICE_NAME }}/${VERSION}."
+             exit 1
+          fi
 
-      - name: Check built packages
+      - name: Check if version exist in s3
         run: |
           totalFoundObjects=$(aws s3 ls "${{env.OUTFILE}}" --summarize | grep "Total Objects: " | sed "s/[^0-9]*//g")
           if [ "$totalFoundObjects" -ne "0" ]; then
               echo "error: ${{env.OUTFILE}} already exists"
-              false
+              exit 1
           fi
 
       - name: Build
