@@ -25,7 +25,7 @@ jobs:
       - name: Get the eur2ccd version
         env:
           TAG: ${{ github.ref_name }}
-        run: echo EUR2CCD_VERSION=0.6.1 >> 1GITHUB_ENV #echo "EUR2CCD_VERSION=${TAG%%-*}" >> $GITHUB_ENV
+        run: echo EUR2CCD_VERSION=0.6.1 >> $GITHUB_ENV #echo "EUR2CCD_VERSION=${TAG%%-*}" >> $GITHUB_ENV
 
       - name: Checkout Repository
         uses: actions/checkout@v4
