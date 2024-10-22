@@ -8,7 +8,6 @@ on:
 env:
   UBUNTU_VERSION: '22.04'
   RUST_IMAGE_TAG: '1.73.0'
-  S3_BUCKET: s3://eur2ccd.concordium.com
   OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ github.ref_name }}_amd64.deb"
   IAM_ROLE: "arn:aws:iam::192549843005:role/github_eur2ccd" 
 
@@ -54,8 +53,11 @@ jobs:
           set +e
           totalFoundObjects=$(aws s3 ls "${{env.OUTFILE}}")
           ec=$?
-          if [ $ec -ne "1" ]; then
-              echo "error: ${{env.OUTFILE}} already exists or you do not have access"
+          if [ $ec -eq "0" ]; then
+              echo $totalFoundObjects
+              exit 1
+          elif [ $ec -eq "255"]; then
+              echo "error: You do not have aws access"
               exit 1
           fi
 
