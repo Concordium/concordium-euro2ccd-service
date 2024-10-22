@@ -54,6 +54,7 @@ jobs:
           totalFoundObjects=$(aws s3 ls "${{env.OUTFILE}}")
           ec=$?
           if [ $ec -eq "0" ]; then
+              echo "Following matching objects found:"
               echo $totalFoundObjects
               exit 1
           elif [ $ec -eq "255"]; then
