@@ -51,15 +51,13 @@ jobs:
       - name: Check if version exist in s3
         run: |
           set +e
-          totalFoundObjects=$(aws s3 ls "${{env.OUTFILE}}")
+          output=$(aws s3 ls "${{env.OUTFILE}}")
           ec=$?
           if [ $ec -eq "0" ]; then
-              echo "Following matching objects found:"
-              echo $totalFoundObjects
+              echo "Objects found ${{env.OUTFILE}}"
               exit 1
-          elif [ $ec -eq "255"]; then
-              echo "error: You do not have aws access"
-              exit 1
+          elif [ $ec -ne "1"]; then
+              echo $output
           fi
 
       - name: Build
