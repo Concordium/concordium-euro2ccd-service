@@ -1,0 +1,72 @@
+name: Build and Push Database Exporter
+
+on:
+  push:
+    tags:
+      - "*.*.*-*"
+
+env:
+  UBUNTU_VERSION: '22.04'
+  RUST_IMAGE_TAG: '1.73.0'
+  OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ github.ref_name }}_amd64.deb"
+  IAM_ROLE: "arn:aws:iam::192549843005:role/github_eur2ccd" 
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  release-euro2ccd:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Get the eur2ccd version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: echo "EUR2CCD_VERSION=${TAG%%-*}" >> $GITHUB_ENV
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          submodules: recursive
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: "eu-west-1"
+          role-to-assume: ${{ env.IAM_ROLE }}
+          role-session-name: ReleaseEur2ccdSession
+      
+      - name: Get version from cargo.toml
+        run: |
+          VERSION=$(yq .package.version Cargo.toml)
+          echo "::notice FULL_IMAGE_TAG=${FULL_IMAGE_TAG}"
+          # Make sure the image does not exist. Abort if we can retrieve any metadata.
+          if [ ! "${{ env.EUR2CCD_VERSION }}" = "$VERSION" ]; then
+             echo "::error ${{ github.ref_name }} does not match ${{ env.SERVICE_NAME }}/${VERSION}."
+             exit 1
+          fi
+
+      - name: Check if version exist in s3
+        run: |
+          set +e
+          output=$(aws s3 ls "${{env.OUTFILE}}")
+          ec=$?
+          if [ $ec -eq "0" ]; then
+              echo "Objects found ${{env.OUTFILE}}"
+              exit 1
+          elif [ $ec -ne "1"]; then
+              echo $output
+          fi
+
+      - name: Build
+        run: |
+          set -euxo pipefail
+          docker build -t ccd-service-builder --build-arg ubuntu_version=${{ env.UBUNTU_VERSION }} --build-arg rust_image_tag=${{ env.RUST_IMAGE_TAG }} -f scripts/debian-package/deb.Dockerfile .
+          id=$(docker create ccd-service-builder)
+          docker cp $id:/build/pkg-root/concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb .
+
+      - name: Publish
+        run: |
+          aws s3 cp concordium-eur2ccd_${{ env.EUR2CCD_VERSION }}_amd64.deb ${{ env.OUTFILE }} 
