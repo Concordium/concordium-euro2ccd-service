@@ -57,7 +57,7 @@ jobs:
               echo "Objects found ${{env.OUTFILE}}"
               exit 1
           elif [ $ec -ne "1"]; then
-              echo $output
+              echo "$output"
           fi
 
       - name: Build
