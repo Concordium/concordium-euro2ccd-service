@@ -37,9 +37,9 @@ pub fn compute_median(rates: &VecDeque<BigRational>) -> Option<BigRational> {
 /**
  * Convert a BigRational type into an exchange rate.
  * 1. Check if the BigRational can be translated directly (both bigints are
- * u64)
- * 2. Divide the numerator and denominator each by 2.
- * Repeat until 1. succeeds.
+ *    u64)
+ * 2. Divide the numerator and denominator each by 2. Repeat until 1.
+ *    succeeds.
  */
 pub fn convert_big_fraction_to_exchange_rate(target: &BigRational) -> ExchangeRate {
     let mut numerator: BigInt = target.numer().clone();
