@@ -2,6 +2,10 @@
 
 # 0.7.0
 
+- Lowered severity of failure upon being unable to reach the source backend
+
+# 0.7.0
+
 - Updated the Concordium Rust SDK to support the changes introduced in protocol 8.
 - Updated the MSRV to 1.73, as required by the updated Rust SDK.
 
