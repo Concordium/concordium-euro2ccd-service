@@ -1,5 +1,9 @@
 # Unreleased changes
 
+# 0.7.1
+
+- Lowered severity of failure upon being unable to reach the source backend
+
 # 0.7.0
 
 - Updated the Concordium Rust SDK to support the changes introduced in protocol 8.

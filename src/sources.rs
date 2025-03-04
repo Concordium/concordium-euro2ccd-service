@@ -184,7 +184,7 @@ async fn request_exchange_rate(source: &Source, client: reqwest::Client) -> Opti
             }
         }
     } else {
-        log::error!("{}: unsuccessful response: {}", source, resp.status());
+        log::warn!("{}: unsuccessful response: {}", source, resp.status());
     };
     None
 }
