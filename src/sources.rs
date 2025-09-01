@@ -19,7 +19,7 @@ use std::{
 use tokio::time::{interval, sleep, Duration};
 
 pub struct RateHistory {
-    pub rates:                  VecDeque<BigRational>,
+    pub rates: VecDeque<BigRational>,
     pub last_reading_timestamp: i64,
 }
 
@@ -31,7 +31,7 @@ pub enum Source {
     /// The label is used to differentiate between different test sources in
     /// logs and database entries.
     Test {
-        url:   Url,
+        url: Url,
         label: String,
     },
     CoinGecko,
@@ -46,10 +46,7 @@ impl fmt::Display for Source {
             Source::LiveCoinWatch(_) => write!(f, "live_coin_watch"),
             Source::CoinMarketCap(_) => write!(f, "coin_market_cap"),
             Source::CoinGecko => write!(f, "coin_gecko"),
-            Source::Test {
-                label,
-                ..
-            } => write!(f, "{}", label),
+            Source::Test { label, .. } => write!(f, "{}", label),
         }
     }
 }
@@ -69,33 +66,29 @@ trait RequestExchangeRate: fmt::Display {
 impl RequestExchangeRate for Source {
     fn get_request(&self, client: reqwest::Client) -> reqwest::RequestBuilder {
         match self {
-            Source::Bitfinex => {
-                client.post(BITFINEX_URL).json(&json!({"ccy1": "CCD", "ccy2": "EUR"}))
-            }
+            Source::Bitfinex => client
+                .post(BITFINEX_URL)
+                .json(&json!({"ccy1": "CCD", "ccy2": "EUR"})),
             Source::LiveCoinWatch(api_key) => client
                 .post(LIVECOINWATCH_URL)
                 .json(&json!({"currency":"EUR","code":"CCD","meta":false}))
                 .header("x-api-key", api_key),
-            Source::CoinMarketCap(api_key) => {
-                client.get(COINMARKETCAP_URL).header("X-CMC_PRO_API_KEY", api_key)
-            }
+            Source::CoinMarketCap(api_key) => client
+                .get(COINMARKETCAP_URL)
+                .header("X-CMC_PRO_API_KEY", api_key),
             Source::CoinGecko => client.get(COINGECKO_URL),
-            Source::Test {
-                url,
-                ..
-            } => client.get(url.clone()),
+            Source::Test { url, .. } => client.get(url.clone()),
         }
     }
 
     fn parse_response(&self, response_bytes: &[u8]) -> anyhow::Result<f64> {
         match self {
-            Source::Bitfinex
-            | Source::Test {
-                ..
-            } => serde_json::from_slice::<Vec<f64>>(response_bytes)?
-                .first()
-                .copied()
-                .ok_or_else(|| anyhow!("Unexpected missing value")),
+            Source::Bitfinex | Source::Test { .. } => {
+                serde_json::from_slice::<Vec<f64>>(response_bytes)?
+                    .first()
+                    .copied()
+                    .ok_or_else(|| anyhow!("Unexpected missing value"))
+            }
             Source::LiveCoinWatch(_) => {
                 Ok(serde_json::from_slice::<LiveCoinWatchResponse>(response_bytes)?.rate)
             }
@@ -109,9 +102,9 @@ impl RequestExchangeRate for Source {
                 }
                 Ok(response.data.ccd.quote.eur.price)
             }
-            Source::CoinGecko => {
-                Ok(serde_json::from_slice::<CoinGeckoResponse>(response_bytes)?.concordium.eur)
-            }
+            Source::CoinGecko => Ok(serde_json::from_slice::<CoinGeckoResponse>(response_bytes)?
+                .concordium
+                .eur),
         }
     }
 }
@@ -130,7 +123,8 @@ async fn request_with_backoff<'a, Fut, T>(
 ) -> Option<T>
 where
     Fut: Future<Output = Option<T>>,
-    Fut: 'a, {
+    Fut: 'a,
+{
     let mut timeout = initial_delay;
     let mut retries = max_retries;
     loop {
@@ -239,7 +233,12 @@ pub async fn pull_exchange_rate(
         if let Some(ref pool) = db_conn_pool {
             if let Err(e) = crate::database::write_read_rate(pool, raw_rate, &source) {
                 stats.increment_failed_database_updates();
-                log::error!("{}: Unable to INSERT new reading: {}, due to: {}", source, raw_rate, e)
+                log::error!(
+                    "{}: Unable to INSERT new reading: {}, due to: {}",
+                    source,
+                    raw_rate,
+                    e
+                )
             };
         }
         stats.update_read_rate(raw_rate, &source);
@@ -247,11 +246,20 @@ pub async fn pull_exchange_rate(
         let rate = match BigRational::from_float(raw_rate) {
             Some(r) => r.recip(), // Get the inverse value, to change units from EUR/CCD to CCD/EUR
             None => {
-                log::error!("{}: Unable to convert rate to rational: {}", source, raw_rate);
+                log::error!(
+                    "{}: Unable to convert rate to rational: {}",
+                    source,
+                    raw_rate
+                );
                 continue;
             }
         };
-        log::info!("{}: New exchange rate polled: {}/{}", source, rate.numer(), rate.denom());
+        log::info!(
+            "{}: New exchange rate polled: {}/{}",
+            source,
+            rate.numer(),
+            rate.denom()
+        );
         {
             let mut rate_history = rate_history_mutex.lock().unwrap();
             rate_history.rates.push_back(rate);
@@ -291,13 +299,13 @@ struct CoinMarketCapResponseData {
 #[derive(SerdeDeserialize)]
 struct CoinMarketCapResponseStatus {
     // This object also contains timestamp, elapsed and credit_count.
-    error_code:    u16,
+    error_code: u16,
     error_message: Option<String>,
 }
 
 #[derive(SerdeDeserialize)]
 pub struct CoinMarketCapResponse {
-    data:   CoinMarketCapResponseData,
+    data: CoinMarketCapResponseData,
     status: CoinMarketCapResponseStatus,
 }
 
@@ -324,14 +332,18 @@ mod tests {
     #[ignore]
     async fn test_ping_coingecko() {
         let client = reqwest::Client::new();
-        assert!(request_exchange_rate(&Source::CoinGecko, client).await.is_some())
+        assert!(request_exchange_rate(&Source::CoinGecko, client)
+            .await
+            .is_some())
     }
 
     #[tokio::test]
     #[ignore]
     async fn test_ping_bitfinex() {
         let client = reqwest::Client::new();
-        assert!(request_exchange_rate(&Source::Bitfinex, client).await.is_some())
+        assert!(request_exchange_rate(&Source::Bitfinex, client)
+            .await
+            .is_some())
     }
 
     #[tokio::test]

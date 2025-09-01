@@ -11,7 +11,9 @@ use warp::{http::StatusCode, Filter};
 async fn handle_metrics(registry: Registry) -> Result<String> {
     // Gather the metrics.
     let mut buffer = vec![];
-    TextEncoder::new().encode(&registry.gather(), &mut buffer).context("cannot gather metrics")?;
+    TextEncoder::new()
+        .encode(&registry.gather(), &mut buffer)
+        .context("cannot gather metrics")?;
     let response = String::from_utf8(buffer).context("cannot encode response as UTF-8")?;
     Ok(response)
 }
@@ -37,11 +39,13 @@ pub async fn serve_prometheus(registry: Registry, port: u16) {
 /// unless allow_collect is true
 #[derive(Debug, Clone)]
 struct HidingGaugeCollector {
-    gauge:         Gauge,
+    gauge: Gauge,
     allow_collect: Arc<RwLock<bool>>,
 }
 impl prometheus::core::Collector for HidingGaugeCollector {
-    fn desc(&self) -> Vec<&prometheus::core::Desc> { self.gauge.desc() }
+    fn desc(&self) -> Vec<&prometheus::core::Desc> {
+        self.gauge.desc()
+    }
 
     fn collect(&self) -> Vec<prometheus::proto::MetricFamily> {
         if self.allow_collect.read().map(|a| *a).unwrap_or(false) {
@@ -56,28 +60,31 @@ impl prometheus::core::Collector for HidingGaugeCollector {
 pub struct Stats {
     /// The last exchange rate read from each source. The metrics inside have 1
     /// variable label, which denotes the source.
-    exchange_rate_read:           GaugeVec,
+    exchange_rate_read: GaugeVec,
     /// The value of the last exchange rate update performed on chain.
-    exchange_rate_updated:        HidingGaugeCollector,
+    exchange_rate_updated: HidingGaugeCollector,
     /// Number of times an update has been outside the warning threshold.
     warning_threshold_violations: IntCounter,
     /// Number of times we failed to read from each source.
     /// Resets to 0 upon successful poll.
     /// Expects 1 label, the source's label.
-    read_attempts:                IntGaugeVec,
+    read_attempts: IntGaugeVec,
     /// Number of times we failed to submit an update.
     /// Resets to 0 upon successful submission.
-    update_attempts:              IntGauge,
+    update_attempts: IntGauge,
     /// A boolean gauge that indicates whether the service is in
     /// dry_run/protected mode (1) or not (0).
-    protected:                    IntGauge,
+    protected: IntGauge,
     /// Number of times we failed to write to the database:
-    failed_database_updates:      IntCounter,
+    failed_database_updates: IntCounter,
 }
 
 impl Stats {
     pub fn update_read_rate(&self, rate: f64, label: &Source) {
-        match self.exchange_rate_read.get_metric_with_label_values(&[&label.to_string()]) {
+        match self
+            .exchange_rate_read
+            .get_metric_with_label_values(&[&label.to_string()])
+        {
             Ok(metric) => metric.set(rate),
             Err(e) => log::error!(
                 "Unable to update read rate to {}, on label {}, due to: {}",
@@ -91,7 +98,13 @@ impl Stats {
     pub fn update_updated_rate(&mut self, rate: &BigRational) {
         if let Some(rate_float) = rate.to_f64() {
             self.exchange_rate_updated.gauge.set(rate_float);
-            if !self.exchange_rate_updated.allow_collect.read().map(|a| *a).unwrap_or(false) {
+            if !self
+                .exchange_rate_updated
+                .allow_collect
+                .read()
+                .map(|a| *a)
+                .unwrap_or(false)
+            {
                 if let Ok(mut allow) = self.exchange_rate_updated.allow_collect.write() {
                     *allow = true
                 } else {
@@ -107,33 +120,57 @@ impl Stats {
         }
     }
 
-    pub fn increment_warning_threshold_violations(&self) { self.warning_threshold_violations.inc() }
+    pub fn increment_warning_threshold_violations(&self) {
+        self.warning_threshold_violations.inc()
+    }
 
     pub fn increment_read_attempts(&self, label: &Source) {
-        match self.read_attempts.get_metric_with_label_values(&[&label.to_string()]) {
+        match self
+            .read_attempts
+            .get_metric_with_label_values(&[&label.to_string()])
+        {
             Ok(metric) => metric.inc(),
             Err(e) => {
-                log::error!("Unable to increment read attempts on label {}, due to: {}", label, e)
+                log::error!(
+                    "Unable to increment read attempts on label {}, due to: {}",
+                    label,
+                    e
+                )
             }
         }
     }
 
     pub fn reset_read_attempts(&self, label: &Source) {
-        match self.read_attempts.get_metric_with_label_values(&[&label.to_string()]) {
+        match self
+            .read_attempts
+            .get_metric_with_label_values(&[&label.to_string()])
+        {
             Ok(metric) => metric.set(0),
             Err(e) => {
-                log::error!("Unable to reset read attempts on label {}, due to: {}", label, e)
+                log::error!(
+                    "Unable to reset read attempts on label {}, due to: {}",
+                    label,
+                    e
+                )
             }
         }
     }
 
-    pub fn increment_update_attempts(&self) { self.update_attempts.inc() }
+    pub fn increment_update_attempts(&self) {
+        self.update_attempts.inc()
+    }
 
-    pub fn reset_update_attempts(&self) { self.update_attempts.set(0) }
+    pub fn reset_update_attempts(&self) {
+        self.update_attempts.set(0)
+    }
 
-    pub fn set_protected(&self) { self.protected.set(1); }
+    pub fn set_protected(&self) {
+        self.protected.set(1);
+    }
 
-    pub fn increment_failed_database_updates(&self) { self.failed_database_updates.inc() }
+    pub fn increment_failed_database_updates(&self) {
+        self.failed_database_updates.inc()
+    }
 }
 
 pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
@@ -144,7 +181,7 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
         &["Source"],
     )?;
     let exchange_rate_updated = HidingGaugeCollector {
-        gauge:         Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?,
+        gauge: Gauge::new("exchange_rate_updated", "Last updated exchange rate.")?,
         allow_collect: Arc::new(RwLock::new(false)),
     };
     let warning_threshold_violations = IntCounter::new(
@@ -152,11 +189,16 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
         "Amount of times an update has been outside the warning threshold.",
     )?;
     let read_attempts = IntGaugeVec::new(
-        prometheus::Opts::new("failed_reads", "Amount of times reading from a source has failed."),
+        prometheus::Opts::new(
+            "failed_reads",
+            "Amount of times reading from a source has failed.",
+        ),
         &["Source"],
     )?;
-    let update_attempts =
-        IntGauge::new("failed_submissions", "Amount of times submitting an update has failed.")?;
+    let update_attempts = IntGauge::new(
+        "failed_submissions",
+        "Amount of times submitting an update has failed.",
+    )?;
     let protected = IntGauge::new(
         "in_protected_mode",
         "Whether the service is in protected (1) mode or not (0).",
@@ -172,13 +214,16 @@ pub async fn initialize() -> anyhow::Result<(Registry, Stats)> {
     registry.register(Box::new(update_attempts.clone()))?;
     registry.register(Box::new(protected.clone()))?;
     registry.register(Box::new(failed_database_updates.clone()))?;
-    Ok((registry, Stats {
-        exchange_rate_read,
-        exchange_rate_updated,
-        warning_threshold_violations,
-        read_attempts,
-        update_attempts,
-        protected,
-        failed_database_updates,
-    }))
+    Ok((
+        registry,
+        Stats {
+            exchange_rate_read,
+            exchange_rate_updated,
+            warning_threshold_violations,
+            read_attempts,
+            update_attempts,
+            protected,
+            failed_database_updates,
+        },
+    ))
 }
