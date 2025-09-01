@@ -34,7 +34,7 @@ struct App {
         use_delimiter = true,
         env = "EUR2CCD_SERVICE_NODE"
     )]
-    endpoint:                   Vec<v2::Endpoint>,
+    endpoint: Vec<v2::Endpoint>,
     #[structopt(
         long = "secret-names",
         help = "Secret names on AWS to get govenance keys from.",
@@ -42,7 +42,7 @@ struct App {
         conflicts_with = "local-keys",
         use_delimiter = true
     )]
-    secret_names:               Vec<String>,
+    secret_names: Vec<String>,
     #[structopt(
         long = "aws-region",
         help = "Which AWS region to get the keys from.",
@@ -50,28 +50,28 @@ struct App {
         default_value = config::AWS_REGION,
         conflicts_with = "local-keys",
     )]
-    region:                     String,
+    region: String,
     #[structopt(
         long = "update-interval",
         help = "How often to update the exchange rate on chain. (In seconds)",
         env = "EUR2CCD_SERVICE_UPDATE_INTERVAL",
         default_value = "1800"
     )]
-    update_interval:            u32,
+    update_interval: u32,
     #[structopt(
         long = "pull-interval",
         help = "How often to pull new exchange rate from each source. (In seconds)",
         env = "EUR2CCD_SERVICE_PULL_INTERVAL",
         default_value = "60"
     )]
-    pull_interval:              u32,
+    pull_interval: u32,
     #[structopt(
         long = "log-level",
         default_value = "info",
         help = "Maximum log level.",
         env = "EUR2CCD_SERVICE_LOG_LEVEL"
     )]
-    log_level:                  log::LevelFilter,
+    log_level: log::LevelFilter,
     #[structopt(
         long = "warning-increase-threshold",
         default_value = "30",
@@ -87,7 +87,7 @@ struct App {
                 halt (specified in percentage)",
         env = "EUR2CCD_SERVICE_HALT_INCREASE_THRESHOLD"
     )]
-    halt_increase_threshold:    u16,
+    halt_increase_threshold: u16,
     #[structopt(
         long = "warning-decrease-threshold",
         default_value = "15",
@@ -103,21 +103,21 @@ struct App {
                 halt (specified in percentage)",
         env = "EUR2CCD_SERVICE_HALT_DECREASE_THRESHOLD"
     )]
-    halt_decrease_threshold:    u8,
+    halt_decrease_threshold: u8,
     #[structopt(
         long = "prometheus-port",
         default_value = "8112",
         help = "Port where prometheus client will serve metrics",
         env = "EUR2CCD_SERVICE_PROMETHEUS_PORT"
     )]
-    prometheus_port:            u16,
+    prometheus_port: u16,
     #[structopt(
         long = "max-rates-saved",
         help = "Determines the size of the history of rates from the exchange",
         env = "EUR2CCD_SERVICE_MAX_RATES_SAVED",
         default_value = "60"
     )]
-    max_rates_saved:            usize,
+    max_rates_saved: usize,
     #[structopt(
         long = "test-sources",
         help = "If set to true, pulls exchange rate from each of the given locations (see \
@@ -126,52 +126,52 @@ struct App {
         use_delimiter = true,
         group = "testing"
     )]
-    test_sources:               Vec<Url>,
+    test_sources: Vec<Url>,
     #[structopt(
         long = "local-keys",
         help = "If given, the service uses local governance keys in specified file instead of \
                 pulling them from AWS.",
         env = "EUR2CCD_SERVICE_LOCAL_KEYS"
     )]
-    local_keys:                 Vec<PathBuf>,
+    local_keys: Vec<PathBuf>,
     #[structopt(
         long = "dry-run",
         help = "Do not perform updates, only log the update that would be performed.",
         env = "EUR2CCD_DRY_RUN"
     )]
-    dry_run:                    bool,
+    dry_run: bool,
     #[structopt(
         long = "database-url",
         help = "MySQL Connection url for a database, where every reading and update is inserted",
         env = "EUR2CCD_SERVICE_DATABASE_URL"
     )]
-    database_url:               Option<String>,
+    database_url: Option<String>,
     #[structopt(
         long = "coin-gecko",
         help = "If this flag is enabled, Coin Gecko is added to the list of sources",
         env = "EUR2CCD_SERVICE_COIN_GECKO"
     )]
-    coin_gecko:                 bool,
+    coin_gecko: bool,
     #[structopt(
         long = "coin-market-cap",
         help = "This option expects an API key for Coin Market Cap, and if given Coin Market Cap \
                 is added to the list of sources.",
         env = "EUR2CCD_SERVICE_COIN_MARKET_CAP"
     )]
-    coin_market_cap:            Option<String>,
+    coin_market_cap: Option<String>,
     #[structopt(
         long = "live-coin-watch",
         help = "This option expects an API key for Live Coin Watch, and if given Live Coin Watch \
                 is added to the list of sources.",
         env = "EUR2CCD_SERVICE_LIVE_COIN_WATCH"
     )]
-    live_coin_watch:            Option<String>,
+    live_coin_watch: Option<String>,
     #[structopt(
         long = "bitfinex",
         help = "If this flag is enabled, BitFinex is added to the list of sources",
         env = "EUR2CCD_SERVICE_BITFINEX"
     )]
-    bitfinex:                   bool,
+    bitfinex: bool,
 }
 
 /// Attempts to create a file, signalling that the service should be forced into
@@ -231,7 +231,10 @@ async fn main() -> anyhow::Result<()> {
         max_rates_saved
     );
 
-    ensure!(!app.endpoint.is_empty(), "At least one node must be provided.");
+    ensure!(
+        !app.endpoint.is_empty(),
+        "At least one node must be provided."
+    );
     ensure!(
         app.halt_increase_threshold > app.warning_increase_threshold,
         "Warning threshold must be lower than halt threshold (increase)"
@@ -269,13 +272,16 @@ async fn main() -> anyhow::Result<()> {
         BigRational::from_integer(app.warning_decrease_threshold.into());
     let halt_decrease_threshold = BigRational::from_integer(app.halt_decrease_threshold.into());
 
-    let (registry, mut stats) =
-        prometheus::initialize().await.context("Failed to start the prometheus server.")?;
+    let (registry, mut stats) = prometheus::initialize()
+        .await
+        .context("Failed to start the prometheus server.")?;
     tokio::spawn(prometheus::serve_prometheus(registry, app.prometheus_port));
     log::debug!("Started prometheus");
 
     let mut node_client = get_node_client(app.endpoint.clone()).await?;
-    let parameters = node_client.get_block_chain_parameters(v2::BlockIdentifier::LastFinal).await?;
+    let parameters = node_client
+        .get_block_chain_parameters(v2::BlockIdentifier::LastFinal)
+        .await?;
     let mut seq_number = node_client
         .get_next_update_sequence_numbers(parameters.block_hash)
         .await?
@@ -289,8 +295,10 @@ async fn main() -> anyhow::Result<()> {
             ChainParameters::V3(params) => params.micro_ccd_per_euro,
         }
     };
-    let mut prev_rate =
-        BigRational::new(initial_rate.numerator().into(), initial_rate.denominator().into());
+    let mut prev_rate = BigRational::new(
+        initial_rate.numerator().into(),
+        initial_rate.denominator().into(),
+    );
     log::debug!(
         "Loaded initial block summary, current exchange rate: {}/{}  (~ {}) microCCD/EUR",
         initial_rate.numerator(),
@@ -305,7 +313,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut add_source = |source: Source| -> anyhow::Result<()> {
         let rates_mutex = Arc::new(Mutex::new(RateHistory {
-            rates:                  VecDeque::with_capacity(max_rates_saved),
+            rates: VecDeque::with_capacity(max_rates_saved),
             last_reading_timestamp: 0,
         }));
         rate_histories.push(rates_mutex.clone());
@@ -349,7 +357,10 @@ async fn main() -> anyhow::Result<()> {
         })?
     }
 
-    ensure!(!rate_histories.is_empty(), "At least one source must be chosen.");
+    ensure!(
+        !rate_histories.is_empty(),
+        "At least one source must be chosen."
+    );
 
     let forced_dry_run = is_dry_run_forced();
     if forced_dry_run {
@@ -386,8 +397,10 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let update_interval_duration = Duration::from_secs(app.update_interval.into());
-    let mut interval =
-        interval_at(Instant::now() + update_interval_duration, update_interval_duration);
+    let mut interval = interval_at(
+        Instant::now() + update_interval_duration,
+        update_interval_duration,
+    );
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     // Main Loop

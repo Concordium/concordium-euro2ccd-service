@@ -50,16 +50,17 @@ pub async fn send_update(
         interval.tick().await;
 
         if get_new_seq_number {
-            let new_seq =
-                match client.get_next_update_sequence_numbers(v2::BlockIdentifier::LastFinal).await
-                {
-                    Ok(o) => o,
-                    Err(e) => {
-                        log::error!("Unable to pull new sequence number due to: {}", e);
-                        // The only reason this should fail is a connection issue.
-                        return None;
-                    }
-                };
+            let new_seq = match client
+                .get_next_update_sequence_numbers(v2::BlockIdentifier::LastFinal)
+                .await
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    log::error!("Unable to pull new sequence number due to: {}", e);
+                    // The only reason this should fail is a connection issue.
+                    return None;
+                }
+            };
             seq_number = new_seq.response.micro_ccd_per_euro;
         }
         // Construct the block item again. This sets the expiry from now so it is

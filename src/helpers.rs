@@ -83,7 +83,10 @@ mod tests {
         v.push(BigRational::new(9u32.into(), 1u32.into()));
         v.push(BigRational::new(5u32.into(), 1u32.into()));
         v.push(BigRational::new(9u32.into(), 1u32.into()));
-        assert_eq!(compute_average(&v), Some(BigRational::new(6u32.into(), 1u32.into())))
+        assert_eq!(
+            compute_average(&v),
+            Some(BigRational::new(6u32.into(), 1u32.into()))
+        )
         // 24 / 4 = 6
     }
 
@@ -147,7 +150,10 @@ mod tests {
         v.push_back(BigRational::new(9u32.into(), 1u32.into()));
         v.push_back(BigRational::new(5u32.into(), 1u32.into()));
         v.push_back(BigRational::new(9u32.into(), 1u32.into()));
-        assert_eq!(compute_median(&v), Some(BigRational::new(7u32.into(), 1u32.into())))
+        assert_eq!(
+            compute_median(&v),
+            Some(BigRational::new(7u32.into(), 1u32.into()))
+        )
         // (5 + 9) / 2 = 7
     }
 
@@ -165,7 +171,11 @@ mod tests {
         v.push_back(BigRational::from_float(0.03878333));
         v.push_back(BigRational::from_float(0.03878333));
         v.push_back(BigRational::from_float(0.03893119));
-        match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
+        match v
+            .into_iter()
+            .collect::<Option<VecDeque<_>>>()
+            .and_then(|rm| compute_median(&rm))
+        {
             Some(v) => assert_eq!(
                 v,
                 (median_part.clone() + median_part) / BigRational::from_integer(2.into())
@@ -189,9 +199,16 @@ mod tests {
         v.push_back(BigRational::from_float(0.03871499568024753));
         v.push_back(BigRational::from_float(0.03878131780389962));
         v.push_back(BigRational::from_float(0.03882990048880441));
-        match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
+        match v
+            .into_iter()
+            .collect::<Option<VecDeque<_>>>()
+            .and_then(|rm| compute_median(&rm))
+        {
             Some(v) => {
-                assert_eq!(v, (median_part_1 + median_part_2) / BigRational::from_integer(2.into()))
+                assert_eq!(
+                    v,
+                    (median_part_1 + median_part_2) / BigRational::from_integer(2.into())
+                )
             }
             None => panic!("unexpeced missing result"),
         }
@@ -212,9 +229,16 @@ mod tests {
         v.push_back(BigRational::from_float(0.0382987008046979));
         v.push_back(BigRational::from_float(0.03829543671546038));
         v.push_back(BigRational::from_float(0.03838764088740058));
-        match v.into_iter().collect::<Option<VecDeque<_>>>().and_then(|rm| compute_median(&rm)) {
+        match v
+            .into_iter()
+            .collect::<Option<VecDeque<_>>>()
+            .and_then(|rm| compute_median(&rm))
+        {
             Some(v) => {
-                assert_eq!(v, (median_part_1 + median_part_2) / BigRational::from_integer(2.into()))
+                assert_eq!(
+                    v,
+                    (median_part_1 + median_part_2) / BigRational::from_integer(2.into())
+                )
             }
             None => panic!("unexpeced missing result"),
         }
@@ -244,7 +268,10 @@ mod tests {
         v.push_back(BigRational::new(100u32.into(), 9u32.into()));
         v.push_back(BigRational::new(1u32.into(), 12u32.into()));
         v.push_back(BigRational::new(1u32.into(), 100u32.into()));
-        assert_eq!(compute_median(&v), Some(BigRational::new(403u32.into(), 72u32.into())))
+        assert_eq!(
+            compute_median(&v),
+            Some(BigRational::new(403u32.into(), 72u32.into()))
+        )
     }
 
     #[test]
@@ -255,7 +282,10 @@ mod tests {
         v.push_back(BigRational::new(100u32.into(), 9u32.into()));
         v.push_back(BigRational::new(1u32.into(), 12u32.into()));
         v.push_back(BigRational::new(1u32.into(), 100u32.into()));
-        assert_eq!(compute_median(&v), Some(BigRational::new(100u32.into(), 9u32.into())))
+        assert_eq!(
+            compute_median(&v),
+            Some(BigRational::new(100u32.into(), 9u32.into()))
+        )
     }
 
     fn test_convert_u64(num: u64, den: u64) {
@@ -276,16 +306,24 @@ mod tests {
     }
 
     #[test]
-    fn test_convert_1() { test_convert_u64(1, 101); }
+    fn test_convert_1() {
+        test_convert_u64(1, 101);
+    }
 
     #[test]
-    fn test_convert_2() { test_convert_u64(13902531941473u64, 12500000000000000000u64); }
+    fn test_convert_2() {
+        test_convert_u64(13902531941473u64, 12500000000000000000u64);
+    }
 
     #[test]
-    fn test_convert_3() { test_convert_u64(12500000000000000000u64, 13902531941473u64); }
+    fn test_convert_3() {
+        test_convert_u64(12500000000000000000u64, 13902531941473u64);
+    }
 
     #[test]
-    fn test_convert_4() { test_convert_u64(1, 2); }
+    fn test_convert_4() {
+        test_convert_u64(1, 2);
+    }
 
     #[test]
     fn test_convert_128() {
