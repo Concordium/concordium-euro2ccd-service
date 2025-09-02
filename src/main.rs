@@ -214,7 +214,11 @@ async fn main() -> anyhow::Result<()> {
     log_builder.filter_module(module_path!(), app.log_level);
     log_builder.init();
 
-    log::info!("Starting {} version {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    log::info!(
+        "Starting {} version {}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
 
     log::debug!("Updating every {} seconds)", app.update_interval);
     log::debug!(
