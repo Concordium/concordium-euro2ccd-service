@@ -1,5 +1,11 @@
 # Unreleased changes
 
+# 0.8.0
+
+- Updated the Concordium Rust SDK.
+- Updated the MSRV to 1.85, as required by the updated Rust SDK.
+- Log the version on startup.
+
 # 0.7.1
 
 - Lowered severity of failure upon being unable to reach the source backend
