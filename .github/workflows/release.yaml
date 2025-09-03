@@ -7,7 +7,7 @@ on:
 
 env:
   UBUNTU_VERSION: '22.04'
-  RUST_IMAGE_TAG: '1.82.0'
+  RUST_IMAGE_TAG: '1.85.1'
   OUTFILE: "s3://eur2ccd.concordium.com/concordium-eur2ccd_${{ github.ref_name }}_amd64.deb"
   IAM_ROLE: "arn:aws:iam::192549843005:role/github_eur2ccd" 
 
