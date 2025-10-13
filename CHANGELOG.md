@@ -1,5 +1,7 @@
 # Unreleased changes
 
+- Updated the `concordium-rust-sdk` dependency and adjust project to be forward-compatible.
+
 # 0.8.0
 
 - Updated the Concordium Rust SDK.
