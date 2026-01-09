@@ -65,7 +65,7 @@ trait RequestExchangeRate: fmt::Display {
 
 impl RequestExchangeRate for Source {
     fn get_request(&self, client: reqwest::Client) -> reqwest::RequestBuilder {
-        // User agent header is required to contain a value for some exchanges. 
+        // User agent header is required to contain a value for some exchanges.
         // Here we will set the cargo package name and version.
         // eg: concordium-eur2ccd/x.y.z
         let user_agent_value = format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"),);
