@@ -65,6 +65,14 @@ trait RequestExchangeRate: fmt::Display {
 
 impl RequestExchangeRate for Source {
     fn get_request(&self, client: reqwest::Client) -> reqwest::RequestBuilder {
+
+        // User agent header is required to contain a value for some exchanges. Here we will set the cargo package name and version.
+        // eg: concordium-eur2ccd/x.y.z
+        let user_agent_value = format!("{}/{}",
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+        );
+
         match self {
             Source::Bitfinex => client
                 .post(BITFINEX_URL)
@@ -76,7 +84,9 @@ impl RequestExchangeRate for Source {
             Source::CoinMarketCap(api_key) => client
                 .get(COINMARKETCAP_URL)
                 .header("X-CMC_PRO_API_KEY", api_key),
-            Source::CoinGecko => client.get(COINGECKO_URL),
+            Source::CoinGecko => client
+                .get(COINGECKO_URL)
+                .header(reqwest::header::USER_AGENT, user_agent_value),
             Source::Test { url, .. } => client.get(url.clone()),
         }
     }
@@ -178,7 +188,10 @@ async fn request_exchange_rate(source: &Source, client: reqwest::Client) -> Opti
             }
         }
     } else {
-        log::warn!("{}: unsuccessful response: {}", source, resp.status());
+        let status = resp.status();
+        let headers = resp.headers().clone();
+        let body = resp.text().await.unwrap_or_default();
+        log::warn!("{}: unsuccessful response. Status: {}, headers: {:?}, body: {}", source, status, headers, body);
     };
     None
 }
