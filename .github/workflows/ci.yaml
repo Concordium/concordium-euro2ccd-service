@@ -11,9 +11,6 @@ on:
 
   workflow_dispatch: # allows manual trigger
 
-env:
-  RUST_VERSION: "1.85"
-
 jobs:
   "lint_fmt":
     name: lint:fmt

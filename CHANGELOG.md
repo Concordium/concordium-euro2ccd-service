@@ -2,6 +2,10 @@
 
 - Updated the `concordium-rust-sdk` dependency and adjust project to be forward-compatible.
 
+# 0.8.2
+
+- Cargo deny fixes, added rust toolchain, bump rust version to 1.91.0
+
 # 0.8.1
 
 - Bug fix for providing a populated user agent header for coin gecko.

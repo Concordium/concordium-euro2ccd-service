@@ -7,7 +7,6 @@ mod secretsmanager;
 mod sources;
 
 use anyhow::{ensure, Context};
-use clap::AppSettings;
 use concordium_rust_sdk::v2::{self, ChainParameters};
 use config::MAX_TIME_CHECK_SUBMISSION;
 use helpers::{compute_median, convert_big_fraction_to_exchange_rate, relative_change};
@@ -22,7 +21,7 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use structopt::StructOpt;
+use structopt::{clap::AppSettings, StructOpt};
 use tokio::time::{interval_at, timeout, Duration, Instant};
 
 #[derive(StructOpt, Debug)]

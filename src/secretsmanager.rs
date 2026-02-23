@@ -1,6 +1,6 @@
 use anyhow::{bail, Context};
-use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_secretsmanager::{Client, Region};
+use aws_config::{meta::region::RegionProviderChain, BehaviorVersion, Region};
+use aws_sdk_secretsmanager::Client;
 use concordium_rust_sdk::types::UpdateKeyPair;
 use std::path::PathBuf;
 
@@ -10,7 +10,11 @@ pub async fn get_governance_from_aws(
 ) -> anyhow::Result<Vec<UpdateKeyPair>> {
     log::debug!("Loading keys from AWS secret manager!");
     let region_provider = RegionProviderChain::first_try(Region::new(region)).or_default_provider();
-    let shared_config = aws_config::from_env().region(region_provider).load().await;
+
+    let shared_config = aws_config::defaults(BehaviorVersion::latest())
+        .region(region_provider)
+        .load()
+        .await;
 
     let client = Client::new(&shared_config);
 
