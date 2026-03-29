@@ -121,7 +121,7 @@ struct App {
     #[structopt(
         long = "test-sources",
         help = "If set to true, pulls exchange rate from each of the given locations (see \
-                local_exchange subproject)  (FOR TESTING)",
+                test_exchange subproject)  (FOR TESTING)",
         env = "EUR2CCD_SERVICE_TEST_SOURCES",
         use_delimiter = true,
         group = "testing"
@@ -136,7 +136,7 @@ struct App {
     local_keys: Vec<PathBuf>,
     #[structopt(
         long = "dry-run",
-        help = "Do not perform updates, only log the update that would be performed.",
+        help = "Do not perform updates on the chain. Only log the updates.",
         env = "EUR2CCD_DRY_RUN"
     )]
     dry_run: bool,
