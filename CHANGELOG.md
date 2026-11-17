@@ -1,9 +1,12 @@
 # Unreleased changes
 
-- Updated the `concordium-rust-sdk` dependency and adjust project to be forward-compatible.
+# 0.8.2
+
+- Connect with TLS to node endpoints that use the `https` scheme.
 
 # 0.8.1
 
+- Updated the `concordium-rust-sdk` dependency and adjust project to be forward-compatible.
 - Bug fix for providing a populated user agent header for coin gecko.
 
 # 0.8.0

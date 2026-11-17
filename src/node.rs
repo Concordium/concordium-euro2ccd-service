@@ -13,6 +13,7 @@ use concordium_rust_sdk::{
 };
 use std::collections::BTreeMap;
 use tokio::time::{interval, Duration};
+use tonic::transport::ClientTlsConfig;
 
 fn construct_block_item(
     seq_number: UpdateSequenceNumber,
@@ -113,10 +114,15 @@ pub async fn check_update_status(
 /**
  * Given a vector of endpoints, return the first one, which allows us to
  * connect to it. Returns an error if we are not able to connect to any of
- * the nodes.
+ * the nodes. Endpoints with the https scheme are connected to with TLS.
  */
 pub async fn get_node_client(endpoints: Vec<v2::Endpoint>) -> anyhow::Result<v2::Client> {
     for node_ep in endpoints.into_iter() {
+        let node_ep = if node_ep.uri().scheme_str() == Some("https") {
+            node_ep.tls_config(ClientTlsConfig::new().with_native_roots())?
+        } else {
+            node_ep
+        };
         if let Ok(client) = v2::Client::new(node_ep).await {
             return Ok(client);
         };
