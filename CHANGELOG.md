@@ -1,5 +1,9 @@
 # Unreleased changes
 
+# 0.8.3
+
+- Confirm a sent update by its sequence number at the last finalized block, instead of by its transaction status.
+
 # 0.8.2
 
 - Connect with TLS to node endpoints that use the `https` scheme.
