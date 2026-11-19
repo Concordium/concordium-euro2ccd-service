@@ -12,7 +12,7 @@ use concordium_rust_sdk::{
     v2,
 };
 use std::collections::BTreeMap;
-use tokio::time::{interval, Duration};
+use tokio::time::{interval, sleep, Duration};
 use tonic::transport::ClientTlsConfig;
 
 fn construct_block_item(
@@ -103,12 +103,24 @@ pub async fn send_update(
     }
 }
 
+/**
+ * Waits until an update with the given sequence number is finalized.
+ */
 pub async fn check_update_status(
-    submission_id: hashes::TransactionHash,
+    seq_number: UpdateSequenceNumber,
     client: &mut v2::Client,
 ) -> anyhow::Result<()> {
-    client.wait_until_finalized(&submission_id).await?;
-    Ok(())
+    loop {
+        let next_seq_number = client
+            .get_next_update_sequence_numbers(v2::BlockIdentifier::LastFinal)
+            .await?
+            .response
+            .micro_ccd_per_euro;
+        if next_seq_number > seq_number {
+            return Ok(());
+        }
+        sleep(Duration::from_secs(1)).await;
+    }
 }
 
 /**

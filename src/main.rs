@@ -560,7 +560,7 @@ async fn main() -> anyhow::Result<()> {
 
             match timeout(
                 Duration::from_secs(MAX_TIME_CHECK_SUBMISSION),
-                check_update_status(submission_id, &mut node_client),
+                check_update_status(new_seq_number, &mut node_client),
             )
             .await
             {
